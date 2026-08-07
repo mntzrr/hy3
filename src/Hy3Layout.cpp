@@ -1213,6 +1213,19 @@ void Hy3Layout::moveNodeToWorkspace(
 
 			Desktop::focusState()->rawMonitorFocus(monitor.lock());
 		}
+	} else {
+		// Without follow, nothing has refocused the origin workspace, so focus
+		// falls through to whatever is underneath - moving a window off a
+		// special workspace drops focus onto the regular workspace below it,
+		// even though the scratchpad is still visible and still has windows.
+		//
+		// Ask hy3 rather than getLastFocusedWindow(): that still names the
+		// window just moved away, and focusing it would chase it to its new
+		// workspace.
+		auto* refocus = this->getWorkspaceFocusedNode(origin);
+		if (refocus != nullptr) {
+			refocus->focus(false, Desktop::FOCUS_REASON_KEYBIND);
+		}
 	}
 }
 
