@@ -1399,7 +1399,11 @@ void Hy3Layout::focusTab(
 	if (node == nullptr) return;
 
 	Hy3Node* tab_node = nullptr;
-	Hy3Node* tab_focused_node;
+	// initialised: the `goto hastab` below jumps over every assignment to this,
+	// and only findTabBarAt()'s contract - that it always writes through the
+	// out-param when it returns non-null - kept that from being a read of an
+	// uninitialised pointer. Nothing enforces that contract.
+	Hy3Node* tab_focused_node = nullptr;
 
 	if (target == TabFocus::MouseLocation || mouse != TabFocusMousePriority::Ignore) {
 		// no surf focused at all
@@ -1478,6 +1482,8 @@ hastab:
 	}
 
 	auto* focus = tab_focused_node;
+	if (focus == nullptr) return;
+
 	while (focus->is_group() && !focus->as_group().group_focused
 	       && focus->as_group().focused_child != nullptr)
 		focus = focus->as_group().focused_child;
