@@ -1,0 +1,54 @@
+# fork: upstream has no CI. This exists to catch the one failure a rebase onto
+# upstream/master produces silently - a tree that no longer compiles against the
+# pinned Hyprland - without needing a live session to find out.
+#
+# It deliberately does NOT gate formatting. The tree does not match its own
+# .clang-format, much of which is clang-format version skew rather than real
+# drift, and reformatting a fork that rebases would conflict with every future
+# upstream commit. See the review notes before adding such a gate.
+name: build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  plugin:
+    name: nix build
+    runs-on: ubuntu-latest
+    # Generous: the timeout is what turns "the binary cache went away" into a
+    # visible failure rather than a runner building Hyprland from source.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            # Hyprland is far too large to build on a runner, so pull it from
+            # the project's own cache. A stale key does not break the build, it
+            # falls back to building from source and hits the timeout above.
+            extra-substituters = https://hyprland.cachix.org
+            extra-trusted-public-keys = hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc=
+
+      # flake.lock pins the Hyprland whose headers this is built against, which
+      # is the whole point: src/main.cpp refuses to load on a hash mismatch, so
+      # "it builds" only means anything against a pinned version.
+      - run: nix build .#hy3 --print-build-logs
+
+  scripts:
+    name: shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Errors only. The test harness is not written to satisfy shellcheck's
+      # style checks, and a gate that cries wolf is a gate that gets ignored;
+      # tighten to --severity=warning once the existing findings are cleared.
+      - run: shellcheck --severity=error test/*.sh
+      - run: bash -n test/*.sh
