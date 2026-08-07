@@ -30,12 +30,22 @@ The crash report Hyprland writes carries no backtrace, but the systemd coredump 
 #7  0x00007f3292fcd410  n/a (n/a + 0x0)      <- call into an unmapped address
 ```
 
-`PLUGIN_EXIT` does not actually tear hy3 down. `g_tabGroups` holds **weak** pointers, so
-clearing it drops references without destroying anything; the tab groups are owned by nodes
-inside `Hy3Layout` instances, and those belong to Hyprland, which does not destroy them when
-the plugin is unloaded. Their animated variables stay registered with the animation manager
-holding vtable pointers into the `dlclose`d library, and the next frame tick jumps into
-unmapped memory. Nothing in the plugin's unload path can be trusted to prevent this.
+A dangling callback into the unloaded library fits that trace, and `PLUGIN_EXIT` used to leave
+two provable ways for one to survive — both since closed, see `Hy3Layout::shutdown()`:
+
+- `g_tabGroups` holds **weak** pointers, so clearing it dropped references without destroying
+  anything. Tab groups are owned by nodes inside `Hy3Layout` instances, and those belong to
+  Hyprland, so a surviving one kept ten animated variables registered whose `setUpdateCallback`
+  lambdas are compiled into this `.so`.
+- The per-instance `m_windowActiveListener` / `m_mouseButtonListener` subscriptions were
+  released only by `~Hy3Layout`, so a surviving instance stayed subscribed to the event bus
+  with handlers in the unloaded library.
+
+**Do not read that as a fix for this crash.** The crash has never been reproduced: six
+unload/reload cycles with a live tab group and animations mid-flight survive with the teardown,
+and five survived without it. Whether an instance outlives `PLUGIN_EXIT` in practice is still
+unknown, and if Hyprland calls any virtual method on a surviving instance the vtable itself is
+unmapped, which no plugin-side teardown can prevent. Treat unloading as unsafe.
 
 For comparison, a SIGSEGV whose trace runs `exit` → `__cxa_finalize` →
 `Aquamarine::CDRMBackend`/`CDRMRenderer` destructors → `eglDestroyContext` is **not** hy3: that

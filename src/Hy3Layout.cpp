@@ -137,13 +137,33 @@ Hy3Layout::Hy3Layout() {
 	);
 }
 
-Hy3Layout::~Hy3Layout() {
+// fork: release everything that can call back into this library.
+//
+// An instance is owned by hyprland, not by the plugin, so it can outlive
+// PLUGIN_EXIT. Anything still registered at that point - the event
+// subscriptions below, and the animated variables inside every tab group, whose
+// update callbacks are lambdas compiled into this .so - would be invoked
+// through an unmapped address once the library is dlclose'd.
+//
+// Safe to call more than once, and safe to call while the instance stays alive:
+// it leaves an empty layout behind rather than a half torn down one.
+void Hy3Layout::shutdown() {
+	// first, so nothing can re-enter the plugin while the tree is going away
+	m_windowActiveListener.reset();
+	m_mouseButtonListener.reset();
+
 	if (this->root) {
 		for (auto& window: this->root->windows()) {
 			window.setHidden(false);
 		}
 	}
+
+	// destroys the node tree, and with it every tab group and animated variable
 	this->root.reset();
+}
+
+Hy3Layout::~Hy3Layout() {
+	this->shutdown();
 
 	g_hy3Instances.erase(this);
 }

@@ -154,6 +154,7 @@ public:
 	Hy3Node* focusMonitor(ShiftDirection);
 
 	// fork additions
+	void shutdown();
 	PHLMONITOR monitorInDirection(ShiftDirection);
 	PHLMONITOR monitorFromSelector(const std::string& selector);
 	bool moveToMonitor(CWorkspace* origin, PHLMONITOR target, bool follow, bool warp);

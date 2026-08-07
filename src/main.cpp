@@ -158,6 +158,18 @@ APICALL EXPORT void PLUGIN_EXIT() {
 	g_windowTitleListener.reset();
 	g_urgentListener.reset();
 
+	// fork: layout instances belong to hyprland and can outlive this call, so
+	// their state has to be torn down explicitly. g_tabGroups below holds weak
+	// pointers - clearing it drops references without destroying anything, and
+	// a surviving tab group keeps animated variables registered whose update
+	// callbacks live in this library.
+	//
+	// Iterate a copy: an instance destroyed as a result would erase itself.
+	auto instances = g_hy3Instances;
+	for (auto* hy3: instances) {
+		hy3->shutdown();
+	}
+
 	g_tabGroups.clear();
 	g_destroyingTabGroups.clear();
 }
