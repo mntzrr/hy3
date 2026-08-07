@@ -337,6 +337,14 @@ plugin {
       # workspaces = not:1,2 # autotiling will be enabled on all workspaces except 1 and 2
       workspaces = <string> # default: all
     }
+
+    # (fork) directional focus never leaves a special (scratchpad) workspace for
+    # another monitor - at the edge of the scratchpad's layout, focus stays put
+    special_focus_trap = <bool> # default: false
+
+    # (fork) hy3:movewindow at the edge of the layout hands the node to the
+    # adjacent monitor instead of wrapping it into a new group
+    movewindow_monitor_fallthrough = <bool> # default: false
   }
 }
 ```
@@ -356,9 +364,10 @@ plugin {
    - `warp` - warp the mouse to the selected window, even if `general:no_cursor_warps` is true.
    - `nowarp` - does not warp the mouse to the selected window, even if `general:no_cursor_warps` is false.
  - `hy3:warpcursor` - warp the cursor to the center of the focused node
- - `hy3:movewindow, <l | u | d | r | left | down | up | right>, [once], [visible]` - move a window left, up, down, or right
+ - `hy3:movewindow, <l | u | d | r | left | down | up | right>, [once], [visible], [monitor]` - move a window left, up, down, or right
    - `once` - only move directly to the neighboring group, without moving into any of its subgroups
    - `visible` - only move between visible nodes, not hidden tabs
+   - `monitor` - **(fork)** at the edge of the layout, move the node to the adjacent monitor instead of wrapping it into a new group. implied by `plugin:hy3:movewindow_monitor_fallthrough`.
  - `hy3:movetoworkspace, <workspace>, [follow, [warp | nowarp]]` - move the active node to the given workspace
    - `follow` - change focus to the given workspace when moving the selected node
    - `warp` - warp the mouse to the selected window, even if `general:no_cursor_warps` is true.
@@ -389,6 +398,14 @@ plugin {
  - `hy3:equalize, [workspace]` - equalize window sizes in group
    - no argument: equalizes immediate siblings of the focused window
    - `workspace`: equalizes all windows across the entire workspace tree
+ - **(fork)** `hy3:movetomonitor, <l | u | d | r | left | down | up | right | +1 | -1 | current | <name> | <id> | desc:<description>>, [follow], [warp | nowarp]` - move the active node into the active workspace of another monitor
+   - the node is moved intact, so a raised group keeps its structure and tabs in the destination layout
+   - `follow` - change focus to the moved node. without it focus is left where it was, unlike hyprland's own monitor move.
+   - `warp` - warp the mouse to the moved window, even if `general:no_cursor_warps` is true. only applies with `follow`.
+   - `nowarp` - does not warp the mouse to the moved window, even if `general:no_cursor_warps` is false.
+ - **(fork)** `hy3:togglefloating, [<workspace>], [warp | nowarp]` - toggle the focused window's floating state, unless it is on a special (scratchpad) workspace, in which case it is unmounted onto a regular workspace and focus follows it
+   - `<workspace>` - workspace to unmount onto. defaults to the workspace visible underneath the scratchpad.
+   - `warp` / `nowarp` - override cursor warping on unmount.
 
 ### Lua dispatchers
 
@@ -424,6 +441,7 @@ hy3.warp_cursor()
 hy3.move_window("l" | "r" | "u" | "d" | "left" | "right" | "up" | "down", {
 	once = true | false,    -- default: false
 	visible = true | false, -- default: false
+	monitor = true | false, -- (fork) default: follows plugin:hy3:movewindow_monitor_fallthrough
 })
 
 hy3.move_to_workspace("<workspace>", {
@@ -463,4 +481,16 @@ hy3.equalize({
 })
 
 hy3.debug_nodes()
+
+-- (fork) additions
+
+hy3.move_to_monitor("l" | "r" | "u" | "d" | "+1" | "-1" | "current" | "<name>" | "<id>", {
+	follow = true | false, -- default: false
+	warp = true | false,   -- default: follows cursor:no_warps when follow = true
+})
+
+hy3.toggle_floating({
+	workspace = "<workspace>", -- default: the workspace underneath the scratchpad
+	warp = true | false,       -- default: follows cursor:no_warps
+})
 ```

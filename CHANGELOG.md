@@ -1,5 +1,19 @@
 # Changelog
 
+# Fork additions
+
+Changes only present in this fork. See FORK.md.
+
+- Added `plugin:hy3:special_focus_trap`, which stops directional focus from escaping a
+  special (scratchpad) workspace to another monitor.
+- Added `hy3:movetomonitor` / `hy3.move_to_monitor`, moving the active node into another
+  monitor's active workspace intact, with an honoured `follow` flag.
+- Added `plugin:hy3:movewindow_monitor_fallthrough` and a `monitor` argument to
+  `hy3:movewindow`, handing the node to the adjacent monitor at the edge of the layout
+  instead of wrapping it into a new group.
+- Added `hy3:togglefloating` / `hy3.toggle_floating`, which unmounts scratchpad windows onto
+  a regular workspace and otherwise toggles floating.
+
 # hl0.56.0.1 and before
 
 - Fix mouse up+left mouse resize
