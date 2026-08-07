@@ -834,7 +834,13 @@ void Hy3Layout::shiftFocus(
 			if (next_window != nullptr) {
 				g_pInputManager->unconstrainMouse();
 				Desktop::focusState()->fullWindowFocus(next_window, Desktop::FOCUS_REASON_KEYBIND);
-				if (warp) Hy3Layout::warpCursorToBox(next_window->m_reportedPosition, next_window->m_reportedSize);
+				// layoutBox rather than m_reportedPosition, which is stale here
+				// for the same reason as in Hy3Node::focus. this window is
+				// floating, so it has no node to take a visualBox from.
+				if (warp) {
+					auto box = next_window->layoutBox();
+					Hy3Layout::warpCursorToBox(box.pos(), box.size());
+				}
 			}
 			return;
 		}

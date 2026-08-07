@@ -242,7 +242,11 @@ void Hy3Node::focus(bool warp, Desktop::eFocusReason reason) {
 		auto window = this->as_window();
 		window->setHidden(false);
 		Desktop::focusState()->fullWindowFocus(window, reason);
-		if (warp) Hy3Layout::warpCursorToBox(window->m_reportedPosition, window->m_reportedSize);
+		// hy3's own box, not m_reportedPosition: hyprland publishes that
+		// asynchronously from sendWindowSize() via doLater(), so reading it
+		// straight after fullWindowFocus() gives the previous layout's
+		// coordinates. the Group case below already warps to visualBox.
+		if (warp) Hy3Layout::warpCursorToBox(this->visualBox.pos(), this->visualBox.size());
 		break;
 	}
 	case Hy3NodeType::Group: {
