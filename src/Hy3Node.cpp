@@ -618,7 +618,19 @@ std::generator<Hy3Node&> Hy3Node::ancestors() {
 
 std::generator<CWindow&> Hy3Node::windows(bool visibleOnly) {
 	if (this->is_target()) {
-		co_yield *this->as_window();
+		// fork: a target whose window is already gone must not be dereferenced.
+		// as_target() *throws* on an expired weak pointer, and this generator
+		// runs during teardown - Hy3Layout::shutdown() walks it from
+		// PLUGIN_EXIT - where expired targets are exactly what to expect. An
+		// exception leaving PLUGIN_EXIT is std::terminate, i.e. it takes the
+		// compositor down, which is the failure this whole teardown path exists
+		// to avoid.
+		if (!this->valid()) co_return;
+
+		auto window = this->as_window();
+		if (!window) co_return;
+
+		co_yield *window;
 	} else {
 		auto& group = this->as_group();
 		if (visibleOnly
