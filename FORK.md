@@ -52,7 +52,9 @@ Fork commits are prefixed `fork:`. To minimise conflicts, changes follow these r
 - extra parameters added to upstream signatures are trailing and defaulted, so upstream call
   sites are untouched
 
-After a rebase, the checks worth re-running are listed under "Verifying" below.
+Before a rebase, check **both** PR tables below — the backports, which upstream merging makes
+disappear cleanly, and the overlapping PRs, which upstream merging makes conflict. After a
+rebase, the checks worth re-running are listed under "Verifying".
 
 ## Features
 
@@ -147,10 +149,43 @@ Two interactions worth knowing:
   the `shutdown()` loop — nothing may stay registered holding a callback compiled into the
   `.so`. See the crash notes in `AGENTS.md`.
 
-`#295` is superseded by `#296` and `#289`/`#168` are already in upstream master. `#329`
-(`focused_child` → `WP`) is deliberately **not** taken: the concern is real, but it is a
-~30-site mechanical diff and a permanent rebase cost. Revisit if #304's guard proves
-insufficient.
+`#295` is superseded by `#296`. `#289`/`#168` are already in upstream master — note that
+both PRs are still *open* on GitHub, their content having landed independently, so the PR
+state is not the thing to check. `#329` (`focused_child` → `WP`) is deliberately **not**
+taken: the concern is real, but it is a ~30-site mechanical diff and a permanent rebase
+cost. Revisit if #304's guard proves insufficient.
+
+## Upstream PRs that overlap fork features
+
+The table above tracks PRs this fork *took*. These are the opposite: open upstream PRs
+that reimplement something the fork already has. They do **not** drop out on rebase — they
+land on top of fork code and conflict with it, so each needs a resolution decided before it
+merges, not during.
+
+| PR | Overlaps | State |
+| --- | --- | --- |
+| [#311](https://github.com/outfoxxed/hy3/pull/311) | feature 3, `movewindow_monitor_fallthrough` | open and live |
+| [#178](https://github.com/outfoxxed/hy3/pull/178) | features 2 and 3 | open but stale — written against the pre-0.56 API (`this->nodes`, `vecPosition`), reported unmergeable, superseded in practice by #311 |
+
+**#311 is the same patch in the same place.** Both insert into the `break_parent->is_root()`
+branch of `shiftOrGetFocus` and call `shiftMonitor()` to hand the node to the adjacent
+monitor. Three differences:
+
+- it is **unconditional**; the fork gates on `plugin:hy3:movewindow_monitor_fallthrough`
+  plus the per-invocation `monitor` argument
+- it passes `warp = true`, threading a new parameter through `shiftMonitor`; the fork
+  passes `false`, and `hy3:movewindow` has no warp argument at all
+- it keeps upstream's `shiftMonitor`; the fork rewrote it as a wrapper over
+  `moveToMonitor()`, which is what makes `follow = false` work
+
+When it merges, resolve by **keeping the fork's gate around upstream's call** —
+`if (monitor_fallthrough && shiftMonitor(node, direction, true, warp))`. Taking it verbatim
+would break the invariant at the top of this file: off by default, identical to upstream.
+Drop the fork's `shiftMonitor` wrapper only once upstream's own honours `follow = false`.
+
+Its warp argument is a fair point the fork has not answered. With `input:follow_mouse` on,
+moving a window across a monitor edge without warping leaves the pointer behind, so the
+next keybind acts on a different window.
 
 ## Verifying
 
@@ -164,16 +199,19 @@ Then run the suite against a throwaway instance — **not** your session. Unload
 plugin that owns every window is disruptive at best, and has crashed the compositor here:
 
 ```sh
-test/nested.sh start 2   # nested Hyprland, this build loaded, two 1280x800 monitors
+test/nested.sh start 2   # nested Hyprland, this build loaded, two 1280x720 monitors
 test/smoke.sh            # 44 assertions covering everything below
 test/nested.sh stop
 ```
 
 `test/nested.sh ctl <args>` runs `hyprctl` against the nested instance for poking at it by
-hand. Two things the harness had to work around: `hyprctl output create headless` produces an
-output that reports `0x0` and never takes a mode (windows sent there get negative sizes), so
-extra monitors are nested Wayland outputs; and hy3's own `hy3_log` output does not reach the
-instance log, so behaviour over `hyprctl` is the only practical oracle.
+hand. `test/smoke.sh` discovers monitor names and ids rather than assuming them, and takes
+`HY3_TEST_TERM` (default `alacritty`) and `HY3_TEST_TIMEOUT` (default 6s, raise it on a
+loaded machine).
+
+The workarounds the harness is built around — why the extra monitors are nested Wayland
+outputs, why `hy3_log` is not an oracle, why the monitors must be edge to edge — are in
+`AGENTS.md`, which is the single source for them. Read it before trusting a hand-run check.
 
 Two notes on the backport assertions, both verified by building `34fff38` (the last
 pre-backport commit) and running the current suite against it:
@@ -192,17 +230,13 @@ pre-backport commit) and running the current suite against it:
 
 hyprpm loads the plugin *after* the first config evaluation, so on that pass hy3's config keys
 do not exist yet. Loading the plugin triggers a config reload, and that is when they apply —
-so a plain `hl.config` at the top level is all that is needed. Two ways to get this wrong:
+so a plain `hl.config` at the top level is all that is needed.
 
-- **Do not guard on `hl.plugin.hy3`.** That table holds the Lua dispatcher factories and is nil
-  during *every* config evaluation, including the post-load reload, so a guarded block never
-  runs and the settings silently stay at their defaults.
-- **Do not let `hl.config` run for keys the loaded plugin did not register.** Each one is
-  recorded as an "unknown config key" config error and nagged about — and `pcall` does **not**
-  prevent that, the error is registered before the Lua error propagates. Matters here because
-  the fork-only keys are absent under upstream hy3.
-
-`hl.get_config` returns nil for an unregistered key silently, so it is the right way to ask:
+The two ways to get this wrong — guarding on `hl.plugin.hy3`, and letting `hl.config` run for
+keys the loaded plugin never registered — are written up under "Hyprland 0.56 config API" in
+`AGENTS.md`. The second one matters especially here: the fork-only keys are absent under
+upstream hy3, so a config shared between the two nags on every evaluation. `hl.get_config`
+returns nil for an unregistered key silently, which makes it the right way to ask:
 
 ```lua
 if hl.get_config("plugin:hy3:special_focus_trap") ~= nil then
@@ -210,14 +244,10 @@ if hl.get_config("plugin:hy3:special_focus_trap") ~= nil then
 end
 ```
 
-Two traps that make manual checks lie, both of which `test/smoke.sh` now guards against:
-
-- **Check the focused monitor, not the active window.** A scratchpad follows whichever monitor
-  gains focus, so a window on it stays "active" whether or not focus really left the monitor.
-- **Give the escape somewhere to land.** `focusMonitor` only changes the active window if the
-  target monitor has one, and there must actually be a monitor in the direction being tested —
-  a scratchpad sitting on the edge-most monitor makes `special_focus_trap` look like it works
-  when nothing was ever attempted.
+`test/smoke.sh` now guards against both of the traps that used to make manual checks of these
+features lie — asserting on the focused monitor rather than the active window, and giving the
+escape somewhere to land. See "Verification traps" in `AGENTS.md` for why each one produced a
+false PASS.
 
 Anything still checked by hand should also confirm that with both flags off, `hy3:movefocus`,
 `hy3:movewindow`, `hy3:movetoworkspace`, `hy3:makegroup` and `hy3:changegroup toggletab`

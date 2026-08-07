@@ -61,6 +61,11 @@ test/nested.sh stop
 
 `test/nested.sh ctl <args>` runs `hyprctl` against the nested instance for manual poking.
 
+`test/smoke.sh` discovers monitor names and ids instead of assuming them, and waits on the
+compositor rather than sleeping a fixed amount — a full run is ~30s. `HY3_TEST_TERM`
+(default `alacritty`, must accept `--title`) and `HY3_TEST_TIMEOUT` (default 6s, raise it on
+a loaded machine) are the two knobs.
+
 Related traps when a build does need to reach a real session:
 
 - `hyprctl plugin unload` returned `ok` while leaving the plugin handle **unchanged** — a
@@ -143,3 +148,9 @@ cmake -DCMAKE_BUILD_TYPE=Release -B build && cmake --build build
 Must be built against the Hyprland release the installed headers belong to; `src/main.cpp`
 refuses to load on a hash mismatch. Compare `hyprctl version` with `GIT_COMMIT_HASH` in
 `/usr/include/hyprland/src/version.h`.
+
+`.github/workflows/build.yml` runs the same build over nix against the Hyprland pinned in
+`flake.lock`, which is the point of it: it catches a rebase that no longer compiles without
+needing a session. It deliberately does **not** gate formatting — the tree does not match
+its own `.clang-format`, and reformatting a fork that rebases would conflict with every
+future upstream commit.
