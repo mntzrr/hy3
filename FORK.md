@@ -85,9 +85,12 @@ left where the user put it.
   a thin wrapper over `moveToMonitor()`.
 - `follow = false` needs more than skipping the focus call: the moved node keeps keyboard
   focus even once it is on another screen, leaving the focused monitor and the focused window
-  on different displays. `refocusMonitor()` hands focus back to the origin monitor. It asks
-  **hy3** for that workspace's focused node rather than `getLastFocusedWindow()`, which still
-  names the node that was just moved away and so chases it onto the other screen.
+  on different displays. `refocusMonitor()` hands focus back to the origin monitor.
+  `moveNodeToWorkspace` refocuses the origin's remaining node (backported #300, below); what
+  is left here is monitor focus itself, plus a `getLastFocusedWindow()` fallback for a
+  workspace with nothing in the hy3 tree. That fallback must keep its
+  `m_workspace != workspace` check — without it, the window just moved is still the last
+  focused one and focusing it chases the node onto the other screen.
 - Argument handling: `l`/`r`/`u`/`d` map to `monitorInDirection()`; `+n`/`-n` are resolved by
   cycling `State::monitorState()->monitors()` with wraparound, because `CMonitorQuery::selector`
   does **not** understand relative offsets (it silently matches nothing); everything else
@@ -116,6 +119,39 @@ is unmounted onto a regular workspace with focus following it.
 - Like feature 1, the decision is keyed off the focused window's workspace so a visible but
   unfocused scratchpad doesn't hijack the action.
 
+## Backported upstream PRs
+
+Fixes that are open upstream but touch code this fork's features sit on top of. Each is a
+separate commit keeping its original author, subjected `fork: backport #NNN — …` and carrying
+an `Upstream-PR:` trailer, so that **when upstream merges one, `git rebase` drops it and the
+series keeps working**. Check each against `upstream/master` before a rebase.
+
+| PR | Fixes | Adapted? |
+| --- | --- | --- |
+| [#302](https://github.com/outfoxxed/hy3/pull/302) | `setLayout` mutating the workspace root group — SIGABRT on the next focus walk | no |
+| [#304](https://github.com/outfoxxed/hy3/pull/304) | null origin node dereferenced on `moveNodeToWorkspace`'s follow path | no |
+| [#305](https://github.com/outfoxxed/hy3/pull/305) | moving a floating window with `follow` focused a tiled window that never moved | yes — warps to `layoutBox()`, upstream's `m_position`/`m_size` are gone |
+| [#300](https://github.com/outfoxxed/hy3/pull/300) | nofollow moves left nothing focused on the origin, dropping focus through a scratchpad | yes — see below |
+| [#331](https://github.com/outfoxxed/hy3/pull/331) | cursor warped to `m_reportedPosition`, published asynchronously and so stale | yes — extended to `focusMonitor`'s floating-window warp |
+| [#296](https://github.com/outfoxxed/hy3/pull/296) | windows escaping tab groups on `hy3:movewindow`; `wrap`/collapse ignoring tab parents | no |
+| [#298](https://github.com/outfoxxed/hy3/pull/298) | tab highlight not refreshed on monitor focus change | yes — `State::monitorState()->monitors()`, and teardown wired into `PLUGIN_EXIT` |
+
+Two interactions worth knowing:
+
+- **#300 and `refocusMonitor()` overlap.** Both refocus the origin's remaining hy3 node, and
+  both avoid `getLastFocusedWindow()` for the same reason (it still names the node that was
+  just moved and chases it onto the other screen). `moveNodeToWorkspace` now owns that half;
+  `refocusMonitor()` keeps monitor focus itself and the fallback for a workspace with nothing
+  left in the hy3 tree. Dropping #300 on a rebase means putting the node refocus back.
+- **#298 registers a new listener.** `PLUGIN_EXIT` releases it, and `g_focusedMonitor`, above
+  the `shutdown()` loop — nothing may stay registered holding a callback compiled into the
+  `.so`. See the crash notes in `AGENTS.md`.
+
+`#295` is superseded by `#296` and `#289`/`#168` are already in upstream master. `#329`
+(`focused_child` → `WP`) is deliberately **not** taken: the concern is real, but it is a
+~30-site mechanical diff and a permanent rebase cost. Revisit if #304's guard proves
+insufficient.
+
 ## Verifying
 
 Build against the Hyprland release the headers belong to:
@@ -129,7 +165,7 @@ plugin that owns every window is disruptive at best, and has crashed the composi
 
 ```sh
 test/nested.sh start 2   # nested Hyprland, this build loaded, two 1280x800 monitors
-test/smoke.sh            # 31 assertions covering everything below
+test/smoke.sh            # 44 assertions covering everything below
 test/nested.sh stop
 ```
 
@@ -138,6 +174,19 @@ hand. Two things the harness had to work around: `hyprctl output create headless
 output that reports `0x0` and never takes a mode (windows sent there get negative sizes), so
 extra monitors are nested Wayland outputs; and hy3's own `hy3_log` output does not reach the
 instance log, so behaviour over `hyprctl` is the only practical oracle.
+
+Two notes on the backport assertions, both verified by building `34fff38` (the last
+pre-backport commit) and running the current suite against it:
+
+- Five of them do fail without the fixes — #305's two, #331's warp, #300's focus, and #296's
+  tab bar. The other two pass either way and are sanity checks, not regression tests.
+- **#304's own SIGSEGV does not reproduce here.** Emptying a special workspace still leaves
+  an implicit group behind, so `getWorkspaceFocusedNode` returns that rather than null. The
+  guard is kept as defence; #305's condition subsumes it.
+- **#298 has no oracle.** Tab highlight state is not exposed over `hyprctl`, so it is checked
+  by eye: put a tab group on each monitor and switch focus between them — the monitor being
+  left must lose its active highlight, the one entered must gain it, without moving focus
+  inside either group.
 
 ### Setting `plugin:hy3:*` from a Lua config
 

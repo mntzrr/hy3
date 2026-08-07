@@ -14,6 +14,23 @@ Changes only present in this fork. See FORK.md.
 - Added `hy3:togglefloating` / `hy3.toggle_floating`, which unmounts scratchpad windows onto
   a regular workspace and otherwise toggles floating.
 
+## Backported from open upstream PRs
+
+Dropped automatically on rebase once upstream merges them. See FORK.md.
+
+- #302 — `setLayout` no longer mutates the workspace root group (SIGABRT on the next focus
+  walk, reachable via `changefocus raise` → `changegroup tab`).
+- #304 — guard the null origin node on `moveNodeToWorkspace`'s follow path.
+- #305 — moving a floating window with `follow` now takes keyboard and monitor focus with it
+  instead of focusing a tiled window that never moved.
+- #300 — moves without `follow` refocus the origin, so moving a window off a scratchpad no
+  longer drops focus to the workspace below.
+- #331 — the cursor warps to hy3's own box rather than the asynchronously published
+  `m_reportedPosition`, which named the window's previous position.
+- #296 — tab groups are treated as boundaries: `hy3:movewindow` no longer escapes them, and
+  `makegroup` on a tab group's sole child wraps it instead of relayouting the tab group.
+- #298 — tab bar highlights refresh when monitor focus changes.
+
 # hl0.56.0.1 and before
 
 - Fix mouse up+left mouse resize

@@ -36,6 +36,16 @@ active_mon() { ctl activewindow -j | jq -r 'if .monitor == null then "none" else
 focus() { dispatch "hl.dsp.focus({ window = 'address:$1' })" 0.4; }
 setflag() { ctl eval "hl.config({ plugin = { hy3 = { $1 = $2 } } })" >/dev/null 2>&1; sleep 0.3; }
 
+alive() { kill -0 "$(cat "${TMPDIR:-/tmp}/hy3-nested/pid")" 2>/dev/null && echo yes || echo no; }
+
+# is the cursor inside the given window's box?
+cursor_in() { # cursor_in <addr>
+	clients | jq -r --arg a "$1" --argjson c "$(ctl cursorpos -j)" '
+		.[]|select(.address==$a)
+		| (($c.x >= .at[0]) and ($c.x <= .at[0] + .size[0])
+		   and ($c.y >= .at[1]) and ($c.y <= .at[1] + .size[1])) | tostring'
+}
+
 spawn() { # spawn <title>
 	dispatch "hl.dsp.exec_cmd('alacritty --title $1')" 2.5
 	local i=0
@@ -171,10 +181,86 @@ dispatch "hl.plugin.hy3.toggle_floating()" 0.6
 check "toggles floating off"                   "false" "$(clients | jq -r --arg a "$A" '.[]|select(.address==$a)|.floating|tostring')"
 
 echo
+echo "== backported upstream fixes =="
+
+# #302: setLayout used to mutate the workspace root group, which every
+# is_root() assumption downstream then tripped over (SIGABRT on the next focus
+# walk). Raising focus to the root and tabbing it is the shortest route there.
+focus "$A"
+dispatch "hl.plugin.hy3.change_focus('raise')" 0.4
+dispatch "hl.plugin.hy3.change_focus('raise')" 0.4
+dispatch "hl.plugin.hy3.change_group('tab')" 0.5
+dispatch "hl.plugin.hy3.move_focus('r')" 0.4
+check "#302 root group survives changegroup tab" "yes" "$(alive)"
+dispatch "hl.plugin.hy3.change_group('untab')" 0.5
+dispatch "hl.plugin.hy3.change_focus('lower')" 0.4
+
+# #305: moving a floating window with follow used to focus whichever tiled
+# window the origin still had - one that never moved - and leave monitor focus
+# behind with it.
+#
+# #304's own SIGSEGV (a null origin node reaching the follow path) does not
+# reproduce here: an emptied special workspace still leaves an implicit group
+# behind, so getWorkspaceFocusedNode returns it rather than null. The liveness
+# check below is kept as a cheap guard, not as a regression test for that
+# crash; #305's condition subsumes the guard in any case.
+spawn t_c
+C=$(addr_of t_c)
+focus "$C"
+# pin it to mon0 first: '+1' wraps at the last monitor, so starting on mon1
+# would move it back to mon0 and prove nothing.
+[ "$(where "$C")" = "mon0" ] || dispatch "hl.plugin.hy3.move_to_monitor('-1',{follow=true})" 0.8
+check "#305 t_c starts on mon0"                  "mon0" "$(where "$C")"
+dispatch "hl.plugin.hy3.toggle_floating()" 0.6
+check "#305 t_c is floating"                     "true" "$(clients | jq -r --arg a "$C" '.[]|select(.address==$a)|.floating|tostring')"
+dispatch "hl.plugin.hy3.move_to_workspace('special:f',{follow=true})" 1
+check "#305 floating window on the scratchpad"   "special:f" "$(ws_of "$C")"
+dispatch "hl.plugin.hy3.move_to_monitor('+1',{follow=true})" 1
+check "#304 instance alive after the move"       "yes"  "$(alive)"
+check "#305 floating window followed"            "mon1" "$(where "$C")"
+check "#305 focus followed it"                   "$C"   "$(ctl activewindow -j | jq -r .address)"
+
+# #331: the warp used m_reportedPosition, published asynchronously, so right
+# after a move it still named the window's previous position.
+check "#331 cursor warped onto the window"       "true" "$(cursor_in "$C")"
+dispatch "hl.dsp.window.close({ window = 'address:'..'$C' })" 0.5
+
+# #300: without follow, nothing refocused the origin, so focus fell through to
+# the workspace under the scratchpad.
+focus "$A"
+[ "$(where "$A")" = "mon0" ] || dispatch "hl.plugin.hy3.move_to_monitor('-1',{follow=true})" 0.8
+dispatch "hl.plugin.hy3.move_to_workspace('special:n',{follow=true})" 1
+focus "$B"
+[ "$(where "$B")" = "mon0" ] || dispatch "hl.plugin.hy3.move_to_monitor('-1',{follow=true})" 0.8
+dispatch "hl.plugin.hy3.move_to_workspace('special:n',{follow=true})" 1
+check "#300 both on the scratchpad"              "special:n special:n" "$(ws_of "$A") $(ws_of "$B")"
+dispatch "hl.plugin.hy3.move_to_workspace('1')" 1
+check "#300 one window left the scratchpad"      "1" "$(ws_of "$B")"
+check "#300 focus stayed on the scratchpad"      "special:n" "$(ctl activewindow -j | jq -r .workspace.name)"
+focus "$A"
+dispatch "hl.plugin.hy3.move_to_workspace('1',{follow=true})" 1
+
+# #296: makegroup on the sole child of a tab group relayouted the tab group
+# itself instead of wrapping the child. Two observable halves: the tab bar has
+# to survive (it insets its children from the top, so the window's y is the
+# oracle), and a wrapper has to actually appear (its inset narrows the window).
+top_of() { clients | jq -r --arg a "$1" '.[]|select(.address==$a)|.at[1]'; }
+width_of() { clients | jq -r --arg a "$1" '.[]|select(.address==$a)|.size[0]'; }
+
+focus "$A"
+dispatch "hl.plugin.hy3.make_group('tab')" 0.6
+TAB_TOP=$(top_of "$A"); TAB_WIDTH=$(width_of "$A")
+dispatch "hl.plugin.hy3.make_group('h')" 0.6
+check "#296 tab bar survives the wrap"           "$TAB_TOP" "$(top_of "$A")"
+check "#296 a wrapper group was created"         "true"     "$([ "$(width_of "$A")" -lt "$TAB_WIDTH" ] && echo true || echo false)"
+dispatch "hl.plugin.hy3.change_focus('raise')" 0.4
+dispatch "hl.plugin.hy3.change_group('untab')" 0.5
+dispatch "hl.plugin.hy3.change_focus('lower')" 0.4
+
+echo
 echo "== teardown =="
 cleanup_windows
-ALIVE=$(kill -0 "$(cat "${TMPDIR:-/tmp}/hy3-nested/pid")" 2>/dev/null && echo yes || echo no)
-check "instance survived the run"              "yes" "$ALIVE"
+check "instance survived the run"              "yes" "$(alive)"
 
 echo
 printf 'passed %d, failed %d\n' "$pass" "$fail"
