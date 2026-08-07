@@ -29,7 +29,40 @@ LOGFILE="$RUNDIR/hyprland.log"
 # identified by elimination
 existing_sigs() { ls -1 "$XDG_RUNTIME_DIR/hypr" 2>/dev/null | sort; }
 
-ctl() { HYPRLAND_INSTANCE_SIGNATURE=$(cat "$SIGFILE") hyprctl "$@"; }
+# Every hyprctl call must be aimed at our instance and no other. An empty
+# signature makes hyprctl error rather than pick an instance, but refuse it here
+# too so the failure names the reason instead of looking like a dead socket.
+ctl() {
+	local sig
+	sig=$(cat "$SIGFILE" 2>/dev/null)
+	[ -n "$sig" ] || {
+		echo "no nested instance signature - refusing to run hyprctl" >&2
+		return 1
+	}
+	HYPRLAND_INSTANCE_SIGNATURE=$sig hyprctl "$@"
+}
+
+# Our nested instance is identified by the config path in its argv, never by a
+# pid alone. A stale pid file, or a pid recycled onto the host compositor, must
+# never be signalled - that is a logout.
+is_nested() {
+	local pid=${1:-}
+	[ -n "$pid" ] || return 1
+	# The name check is not redundant: any shell running a command that merely
+	# mentions the config path has it in its own argv, and matching on the path
+	# alone would make this true for that shell.
+	[ "$(cat "/proc/$pid/comm" 2>/dev/null)" = "Hyprland" ] || return 1
+	tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -qF -- "$CONFIG"
+}
+
+# Every Hyprland that is ours, and no others - the host compositor is named the
+# same and is only told apart by its config.
+nested_pids() {
+	local pid
+	for pid in $(pgrep -x Hyprland 2>/dev/null); do
+		is_nested "$pid" && echo "$pid"
+	done
+}
 
 # The host compositor, i.e. the live instance that is not ours.
 host_ctl() {
@@ -67,11 +100,29 @@ start() {
 	local before
 	before=$(existing_sigs)
 
-	# a stale signature in the environment makes the child talk to the parent
-	env -u HYPRLAND_INSTANCE_SIGNATURE \
+	# a stale signature in the environment makes the child talk to the parent.
+	#
+	# setsid puts the instance in its own session and process group. Without it
+	# the compositor is a plain background job of whatever ran this script, and
+	# anything tearing that down - a closed terminal, an editor or agent reaping
+	# its children, a process-group signal - can take it along. Detached, it also
+	# cannot be swept up by a cleanup that matches on the name "Hyprland", which
+	# would otherwise be indistinguishable from the host compositor.
+	setsid env -u HYPRLAND_INSTANCE_SIGNATURE \
 		HYPRLAND_NO_SD_NOTIFY=1 \
 		Hyprland -c "$CONFIG" >"$LOGFILE" 2>&1 &
-	echo $! >"$PIDFILE"
+
+	# not $!: that is setsid, which forks rather than execs when it is already a
+	# process group leader. Find the compositor by its config path instead.
+	local pid="" j=0
+	while [ "$j" -lt 40 ]; do
+		pid=$(nested_pids | head -1)
+		[ -n "$pid" ] && break
+		j=$((j + 1))
+		sleep 0.25
+	done
+	[ -n "$pid" ] || { echo "nested instance did not start" >&2; exit 1; }
+	echo "$pid" >"$PIDFILE"
 
 	# wait for the new instance to register its socket
 	local sig="" i=0
@@ -86,7 +137,7 @@ start() {
 	if [ -z "$sig" ]; then
 		echo "instance did not come up; tail of $LOGFILE:" >&2
 		tail -20 "$LOGFILE" >&2
-		kill "$(cat "$PIDFILE")" 2>/dev/null
+		is_nested "$pid" && kill "$pid" 2>/dev/null
 		exit 1
 	fi
 	echo "$sig" >"$SIGFILE"
@@ -154,11 +205,32 @@ start() {
 }
 
 stop() {
-	[ -f "$SIGFILE" ] && ctl dispatch exit >/dev/null 2>&1
-	sleep 1
-	[ -f "$PIDFILE" ] && kill "$(cat "$PIDFILE")" 2>/dev/null
+	# `dispatch exit` no longer parses - hyprctl evaluates its argument as lua
+	# under a lua config, which nested.lua is. Ask nicely first anyway; the kill
+	# below is the fallback, not the plan.
+	local running=0
+	[ -n "$(nested_pids)" ] && running=1
+
+	if [ -s "$SIGFILE" ]; then
+		ctl dispatch "hl.dsp.exit()" >/dev/null 2>&1
+		sleep 1
+	fi
+
+	# Only ever signal a pid confirmed to be ours. Sweep by config path rather
+	# than trusting the pid file, so a run whose file was lost still gets cleaned
+	# up and a recycled pid still gets left alone.
+	local pid
+	for pid in $(cat "$PIDFILE" 2>/dev/null) $(nested_pids); do
+		is_nested "$pid" && kill "$pid" 2>/dev/null
+	done
+
 	rm -f "$SIGFILE" "$PIDFILE"
-	echo "stopped"
+
+	if [ -n "$(nested_pids)" ]; then
+		echo "warning: a nested instance is still running: $(nested_pids | tr '\n' ' ')" >&2
+		return 1
+	fi
+	[ "$running" = 1 ] && echo "stopped" || echo "nothing of ours was running"
 }
 
 case "${1:-}" in
