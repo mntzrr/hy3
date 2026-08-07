@@ -19,8 +19,27 @@ fork adds, how changes are kept conflict-minimal, and how to install it with hyp
 ## Never test against the user's live session
 
 Unloading hy3 — a layout plugin that owns every tiled window — **crashed the compositor and
-cost the user their session**. The crash report carried no backtrace, so it was not even
-diagnosable after the fact. Do not do this to iterate on a build.
+cost the user their session**. Do not do this to iterate on a build.
+
+The crash report Hyprland writes carries no backtrace, but the systemd coredump does
+(`coredumpctl info <pid>`), and it names the mechanism:
+
+```
+#10 Monitor::CMonitorFrameScheduler::onFrame()
+#8  Animation::CHyprAnimationManager::frameTick()
+#7  0x00007f3292fcd410  n/a (n/a + 0x0)      <- call into an unmapped address
+```
+
+`PLUGIN_EXIT` does not actually tear hy3 down. `g_tabGroups` holds **weak** pointers, so
+clearing it drops references without destroying anything; the tab groups are owned by nodes
+inside `Hy3Layout` instances, and those belong to Hyprland, which does not destroy them when
+the plugin is unloaded. Their animated variables stay registered with the animation manager
+holding vtable pointers into the `dlclose`d library, and the next frame tick jumps into
+unmapped memory. Nothing in the plugin's unload path can be trusted to prevent this.
+
+For comparison, a SIGSEGV whose trace runs `exit` → `__cxa_finalize` →
+`Aquamarine::CDRMBackend`/`CDRMRenderer` destructors → `eglDestroyContext` is **not** hy3: that
+is an EGL teardown crash during process exit, after the session is already ending.
 
 ```sh
 test/nested.sh start 2   # throwaway Hyprland, this build loaded, two 1280x800 monitors
