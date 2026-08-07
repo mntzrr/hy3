@@ -139,13 +139,26 @@ output that reports `0x0` and never takes a mode (windows sent there get negativ
 extra monitors are nested Wayland outputs; and hy3's own `hy3_log` output does not reach the
 instance log, so behaviour over `hyprctl` is the only practical oracle.
 
-Note that on Hyprland 0.56 a config load resets plugin config values to the defaults the
-plugin registered, *after* the config file has been parsed — so `plugin:hy3:*` settings made
-from a Lua config file never survive, guarded or not. Apply them with `hyprctl eval` once the
-plugin is loaded:
+### Setting `plugin:hy3:*` from a Lua config
 
-```sh
-hyprctl eval "hl.config({ plugin = { hy3 = { special_focus_trap = true } } })"
+hyprpm loads the plugin *after* the first config evaluation, so on that pass hy3's config keys
+do not exist yet. Loading the plugin triggers a config reload, and that is when they apply —
+so a plain `hl.config` at the top level is all that is needed. Two ways to get this wrong:
+
+- **Do not guard on `hl.plugin.hy3`.** That table holds the Lua dispatcher factories and is nil
+  during *every* config evaluation, including the post-load reload, so a guarded block never
+  runs and the settings silently stay at their defaults.
+- **Do not let `hl.config` run for keys the loaded plugin did not register.** Each one is
+  recorded as an "unknown config key" config error and nagged about — and `pcall` does **not**
+  prevent that, the error is registered before the Lua error propagates. Matters here because
+  the fork-only keys are absent under upstream hy3.
+
+`hl.get_config` returns nil for an unregistered key silently, so it is the right way to ask:
+
+```lua
+if hl.get_config("plugin:hy3:special_focus_trap") ~= nil then
+    hl.config({ plugin = { hy3 = { special_focus_trap = true } } })
+end
 ```
 
 Two traps that make manual checks lie, both of which `test/smoke.sh` now guards against:
