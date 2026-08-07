@@ -940,6 +940,31 @@ PHLMONITOR Hy3Layout::monitorFromSelector(const std::string& selector) {
 	return State::monitorState()->query().selector(selector).run();
 }
 
+// fork: give keyboard focus back to whatever was last focused on a monitor.
+// rawMonitorFocus alone only moves the *monitor* focus, leaving the window that
+// was just moved away still focused on the other screen.
+static void refocusMonitor(PHLMONITOR monitor) {
+	if (!monitor) return;
+
+	Desktop::focusState()->rawMonitorFocus(monitor);
+
+	auto workspace = monitor->m_activeSpecialWorkspace;
+	if (!valid(workspace)) workspace = monitor->m_activeWorkspace;
+	if (!valid(workspace)) return;
+
+	auto target_window = workspace->getLastFocusedWindow();
+	if (!target_window) return;
+
+	if (auto* hy3 = hy3InstanceForWorkspace(workspace)) {
+		if (auto* node = hy3->getNodeFromWindow(target_window.get())) {
+			node->focus(false, Desktop::FOCUS_REASON_KEYBIND);
+			return;
+		}
+	}
+
+	Desktop::focusState()->fullWindowFocus(target_window, Desktop::FOCUS_REASON_KEYBIND);
+}
+
 bool Hy3Layout::shiftMonitor(Hy3Node& node, ShiftDirection direction, bool follow) {
 	return this->moveToMonitor(
 	    node.layout()->workspace().get(),
@@ -966,9 +991,9 @@ bool Hy3Layout::moveToMonitor(CWorkspace* origin, PHLMONITOR target, bool follow
 
 	this->moveNodeToWorkspace(origin, next_workspace->m_name, follow, warp);
 
-	// moving the focused node off screen can drag focus along with it, so put
-	// focus back where it was.
-	if (!follow && origin_monitor) Desktop::focusState()->rawMonitorFocus(origin_monitor);
+	// the moved node keeps keyboard focus even though it is now on another
+	// screen, so hand focus back to the monitor it left.
+	if (!follow) refocusMonitor(origin_monitor);
 
 	return true;
 }
