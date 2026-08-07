@@ -1141,9 +1141,11 @@ void Hy3Layout::moveNodeToWorkspace(
 		workspace = State::workspaceState()->create(target.id, origin_ws->monitorID(), target.name);
 	}
 
-	if (focused_window != nullptr
-	    && (focused_window_node == nullptr || Fullscreen::controller()->isFullscreen(focused_window)))
-	{
+	const bool moved_floating =
+	    focused_window != nullptr
+	    && (focused_window_node == nullptr || Fullscreen::controller()->isFullscreen(focused_window));
+
+	if (moved_floating) {
 		g_pHyprRenderer->damageWindow(focused_window);
 		Desktop::globalWindowController()->moveWindowToWorkspace(focused_window, workspace);
 	} else {
@@ -1191,11 +1193,25 @@ void Hy3Layout::moveNodeToWorkspace(
 
 		monitor->changeWorkspace(workspace);
 
-		// a floating window has no node, and the branch above took the
-		// moveWindowToWorkspace path without ever setting one.
-		if (node != nullptr) {
+		// `node` is the origin workspace's focused node, which is set whenever
+		// that workspace holds a tiled window - even when the window actually
+		// moved was the floating one. Following it would focus a window that
+		// never left, so the floating case has to be handled on its own.
+		if (node != nullptr && !moved_floating) {
 			node->layout()->recalcGeometry();
 			node->focus(warp, Desktop::FOCUS_REASON_KEYBIND);
+		} else if (focused_window != nullptr) {
+			Desktop::focusState()->fullWindowFocus(focused_window, Desktop::FOCUS_REASON_KEYBIND);
+
+			// not m_reportedPosition: that is published asynchronously by
+			// sendWindowSize(), so right after a move it still holds the
+			// coordinates the window had on the workspace it just left.
+			if (warp) {
+				auto box = focused_window->layoutBox();
+				Hy3Layout::warpCursorToBox(box.pos(), box.size());
+			}
+
+			Desktop::focusState()->rawMonitorFocus(monitor.lock());
 		}
 	}
 }
