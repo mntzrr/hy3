@@ -31,6 +31,27 @@ hl.config({
     },
 })
 
+-- Monitor layout.
+--
+-- These have to live in the config: a monitor rule applied later over
+-- `hyprctl eval` does nothing at all for these outputs, while a rule present at
+-- output-creation time is honoured. Nor can a mode be set - a nested wayland
+-- output reports no available modes, is sized by the host compositor, and
+-- rejects any mode as invalid.
+--
+-- So only the position is pinned. The spacing must match the size the outputs
+-- actually take: nested.sh floats each window on the host, which snaps it to
+-- aquamarine's default 1280x720.
+--
+-- The monitors have to end up edge to edge. Spacing them out "safely" does not
+-- work - Hyprland's inDirection monitor lookup does not cross a gap, so
+-- `hy3:movetomonitor l|r` silently finds nothing while index-based `+1`/`-1`
+-- keeps working, and every directional test fails for the wrong reason.
+hl.monitor({ output = "WAYLAND-1", position = "0x0", scale = 1 })
+hl.monitor({ output = "WAYLAND-2", position = "1280x0", scale = 1 })
+hl.monitor({ output = "WAYLAND-3", position = "2560x0", scale = 1 })
+hl.monitor({ output = "WAYLAND-4", position = "3840x0", scale = 1 })
+
 -- escape hatch: the harness normally drives everything over hyprctl, but if the
 -- instance is launched interactively these make it usable.
 hl.bind("SUPER + Q", hl.dsp.window.close())

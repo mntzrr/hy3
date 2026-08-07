@@ -92,6 +92,14 @@ The user's config is Lua. Several older spellings no longer work:
   node instead.
 - `hyprctl output create headless` yields an output that reports `0x0` and never takes a mode;
   windows sent there get negative sizes. Use `output create wayland` for nested test monitors.
+- **The monitor `inDirection` query does not cross a gap.** With two monitors 4866px apart,
+  `hy3:movetomonitor l|r` silently found nothing while index-based `+1`/`-1` still worked. Test
+  monitors must be laid out edge to edge, or every directional result is a false negative.
+- **A nested Wayland output reports no available modes** and rejects any mode as invalid; it is
+  sized by the host compositor. A monitor rule applied later over `hyprctl eval` does nothing
+  at all for these outputs — only rules present at output-creation time are honoured. So the
+  positions live in `test/nested.lua`, and `test/nested.sh` floats the windows on the host,
+  which snaps them to aquamarine's default 1280x720 so those positions line up.
 - `Hy3Node::as_target()` **throws** on a group node — guard with `is_target()`, or operate on
   the focused window.
 
