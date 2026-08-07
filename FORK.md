@@ -97,6 +97,21 @@ Build against the Hyprland release the headers belong to:
 cmake -DCMAKE_BUILD_TYPE=Release -B build && cmake --build build
 ```
 
+Then run the suite against a throwaway instance — **not** your session. Unloading a layout
+plugin that owns every window is disruptive at best, and has crashed the compositor here:
+
+```sh
+test/nested.sh start 2   # nested Hyprland, this build loaded, two 1280x800 monitors
+test/smoke.sh            # 31 assertions covering everything below
+test/nested.sh stop
+```
+
+`test/nested.sh ctl <args>` runs `hyprctl` against the nested instance for poking at it by
+hand. Two things the harness had to work around: `hyprctl output create headless` produces an
+output that reports `0x0` and never takes a mode (windows sent there get negative sizes), so
+extra monitors are nested Wayland outputs; and hy3's own `hy3_log` output does not reach the
+instance log, so behaviour over `hyprctl` is the only practical oracle.
+
 Note that on Hyprland 0.56 a config load resets plugin config values to the defaults the
 plugin registered, *after* the config file has been parsed — so `plugin:hy3:*` settings made
 from a Lua config file never survive, guarded or not. Apply them with `hyprctl eval` once the
@@ -106,16 +121,15 @@ plugin is loaded:
 hyprctl eval "hl.config({ plugin = { hy3 = { special_focus_trap = true } } })"
 ```
 
-Then, with a nested split and a tab group across two monitors:
+Two traps that make manual checks lie, both of which `test/smoke.sh` now guards against:
 
-1. On the scratchpad, directional focus at the layout edge stays put with
-   `special_focus_trap` on and jumps monitors with it off.
-2. `hyprctl dispatch hy3:movetomonitor +1` moves the window without moving focus;
-   `hy3:movetomonitor +1, follow` takes focus along. With focus raised to a group
-   (`hy3:changefocus raise`) the whole group moves and its tab bar renders correctly.
-3. `hy3:movewindow l, monitor` on the leftmost window of the left monitor lands the node on
-   the adjacent monitor; at the outermost edge it falls back to upstream's wrap behaviour.
-4. `hy3:togglefloating` toggles floating on a normal workspace and unmounts on the scratchpad.
-5. With both flags off, `hy3:movefocus`, `hy3:movewindow`, `hy3:movetoworkspace`,
-   `hy3:makegroup` and `hy3:changegroup toggletab` behave exactly as upstream.
-6. `hyprctl dispatch hy3:debugnodes` shows no orphaned or duplicated nodes after each move.
+- **Check the focused monitor, not the active window.** A scratchpad follows whichever monitor
+  gains focus, so a window on it stays "active" whether or not focus really left the monitor.
+- **Give the escape somewhere to land.** `focusMonitor` only changes the active window if the
+  target monitor has one, and there must actually be a monitor in the direction being tested —
+  a scratchpad sitting on the edge-most monitor makes `special_focus_trap` look like it works
+  when nothing was ever attempted.
+
+Anything still checked by hand should also confirm that with both flags off, `hy3:movefocus`,
+`hy3:movewindow`, `hy3:movetoworkspace`, `hy3:makegroup` and `hy3:changegroup toggletab`
+behave exactly as upstream.
