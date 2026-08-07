@@ -1341,7 +1341,12 @@ Hy3Node* findTabBarAt(Hy3Node& node, Vector2D pos, Hy3Node** focused_node) {
 	if (node.is_group()) {
 		if (node.hidden) return nullptr;
 		// note: tab bar clicks ignore animations
-		if (node.visualBox.x > pos.x || node.logicalBox.y > pos.y || node.visualBox.x + node.visualBox.w < pos.x
+		// all four bounds against visualBox. The top one read logicalBox, which
+		// is visualBox grown by the gap offsets, so a click in the gap *above* a
+		// group was treated as inside it - and the inset test just below, which
+		// decides whether the click hit the tab bar, is relative to visualBox.y.
+		if (node.visualBox.x > pos.x || node.visualBox.y > pos.y
+		    || node.visualBox.x + node.visualBox.w < pos.x
 		    || node.visualBox.y + node.visualBox.h < pos.y)
 			return nullptr;
 
