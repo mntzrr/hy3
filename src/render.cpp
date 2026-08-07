@@ -24,7 +24,10 @@ void Hy3Render::renderTab(
     int borderWidth,
     int radius
 ) {
-	static auto& shader = Hy3Shaders::instance()->tab;
+	auto* shaders = Hy3Shaders::instance();
+	if (shaders == nullptr) return;
+
+	auto& shader = shaders->tab;
 	auto& rdata = g_pHyprRenderer->m_renderData;
 
 	auto rbox = box;
