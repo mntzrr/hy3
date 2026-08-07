@@ -1167,10 +1167,31 @@ void Hy3Layout::moveNodeToWorkspace(
 		    follow
 		);
 
+		// fork: refuse a destination running a different layout, and do it
+		// before anything is extracted. Falling back to `this` inserted the
+		// node into the *origin's* tree while its windows were assigned to
+		// another space, leaving the tree and reality permanently disagreeing.
+		//
+		// Only a space that exists and reports some other tiled algorithm is
+		// rejected. A freshly created workspace may not have materialised one
+		// yet, and that has to stay a legal move.
+		auto* destHy3 = hy3InstanceForWorkspace(workspace);
+		if (destHy3 == nullptr && workspace->m_space && workspace->m_space->algorithm()
+		    && workspace->m_space->algorithm()->tiledAlgo().get() != nullptr)
+		{
+			hy3_log(
+			    ERR,
+			    "refusing to move node {:x} to workspace {}: it is not running hy3",
+			    (uintptr_t) node,
+			    workspace->m_id
+			);
+			return;
+		}
+
+		auto* destLayout = destHy3 ? destHy3 : this;
+
 		auto* parent_node = node->parent.get();
 		auto node_up = parent_node->extractAndMerge(*node, nullptr);
-		auto* destHy3 = hy3InstanceForWorkspace(workspace);
-		auto* destLayout = destHy3 ? destHy3 : this;
 
 		g_suppressInsert = true;
 
