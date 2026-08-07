@@ -63,19 +63,21 @@ PHLWORKSPACE workspace_for_action(bool allow_fullscreen) {
 std::string operationWorkspaceForName(const std::string& workspace) {
 	typedef std::string (*PHYPRSPLIT_GET_WORKSPACE_FN)(const std::string& workspace);
 
-	static auto* hyprsplitTransformer = []() {
-		for (auto& p: g_pPluginSystem->getAllPlugins()) {
-			if (p->m_name == "hyprsplit") {
-				return reinterpret_cast<PHYPRSPLIT_GET_WORKSPACE_FN>(
-				    dlsym(p->m_handle, "hyprsplitGetWorkspace")
-				);
-			}
-		}
+	// Resolved per call, deliberately. Caching this in a static meant a
+	// hyprsplit unloaded afterwards left the pointer aimed into a dlclose'd
+	// library - the same dangling-call shape that has crashed this compositor
+	// before - and caching a *miss* meant a hyprsplit loaded after hy3 never
+	// took effect at all, which is the usual load order. This runs on workspace
+	// moves, not per frame, and costs a handful of string compares.
+	for (auto& p: g_pPluginSystem->getAllPlugins()) {
+		if (p->m_name != "hyprsplit") continue;
 
-		return reinterpret_cast<PHYPRSPLIT_GET_WORKSPACE_FN>(0);
-	}();
+		auto* transformer =
+		    reinterpret_cast<PHYPRSPLIT_GET_WORKSPACE_FN>(dlsym(p->m_handle, "hyprsplitGetWorkspace"));
+		if (transformer != nullptr) return transformer(workspace);
+		break;
+	}
 
-	if (hyprsplitTransformer != 0) return hyprsplitTransformer(workspace);
 	return workspace;
 }
 
