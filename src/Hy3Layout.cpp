@@ -952,15 +952,19 @@ static void refocusMonitor(PHLMONITOR monitor) {
 	if (!valid(workspace)) workspace = monitor->m_activeWorkspace;
 	if (!valid(workspace)) return;
 
-	auto target_window = workspace->getLastFocusedWindow();
-	if (!target_window) return;
-
+	// the node that was just moved away is still this workspace's last focused
+	// window, so asking for that first would just chase the node onto the other
+	// screen. hy3's tree has already had the node extracted, so its focused node
+	// is the right answer.
 	if (auto* hy3 = hy3InstanceForWorkspace(workspace)) {
-		if (auto* node = hy3->getNodeFromWindow(target_window.get())) {
+		if (auto* node = hy3->getWorkspaceFocusedNode(workspace.get())) {
 			node->focus(false, Desktop::FOCUS_REASON_KEYBIND);
 			return;
 		}
 	}
+
+	auto target_window = workspace->getLastFocusedWindow();
+	if (!target_window || target_window->m_workspace != workspace) return;
 
 	Desktop::focusState()->fullWindowFocus(target_window, Desktop::FOCUS_REASON_KEYBIND);
 }
