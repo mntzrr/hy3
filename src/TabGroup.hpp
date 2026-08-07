@@ -87,7 +87,7 @@ private:
 	    const CHyprColor& focused,
 	    const CHyprColor& urgent,
 	    const CHyprColor& locked,
-	    const CHyprColor& inactiveMonitor,
+	    const CHyprColor& active_alt_monitor,
 	    const CHyprColor& inactive
 	);
 };

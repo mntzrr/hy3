@@ -117,7 +117,6 @@ Hy3TabBarEntry::Hy3TabBarEntry(Hy3TabBar& tab_bar, Hy3Node& node): tab_bar(tab_b
 	this->focused->setUpdateCallback(update_callback);
 	this->urgent->setUpdateCallback(update_callback);
 	this->active_monitor->setUpdateCallback(update_callback);
-	this->focused->setUpdateCallback(update_callback);
 	this->offset->setUpdateCallback(update_callback);
 	this->width->setUpdateCallback(update_callback);
 	this->vertical_pos->setUpdateCallback(update_callback);

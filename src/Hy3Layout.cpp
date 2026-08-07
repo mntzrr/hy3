@@ -1106,9 +1106,7 @@ void Hy3Layout::warpCursor() {
 	auto current_window = Desktop::focusState()->window();
 
 	if (current_window != nullptr) {
-		if (current_window != nullptr) {
-			Hy3Layout::warpCursorWithFocus(current_window->middle(), true);
-		}
+		Hy3Layout::warpCursorWithFocus(current_window->middle(), true);
 	} else {
 		auto* node =
 		    this->getWorkspaceFocusedNode(Desktop::focusState()->monitor()->m_activeWorkspace.get());

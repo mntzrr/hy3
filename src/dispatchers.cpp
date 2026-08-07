@@ -700,7 +700,7 @@ static SDispatchResult dispatch_focustab(std::string value) {
 		focus = TabFocus::Index;
 		if (!Hyprutils::String::isNumber(args[i])) return SDispatchResult {};
 		index = std::stoi(args[i]);
-		hy3_log(LOG, "Focus index '%s' -> %d, errno: %d", args[i].c_str(), index, errno);
+		hy3_log(LOG, "focustab index '{}' -> {}", args[i], index);
 	} else return SDispatchResult {};
 
 	i++;
