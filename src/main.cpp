@@ -78,6 +78,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 	CONF("autotile:trigger_width", Int, 0);
 	CONF("autotile:workspaces", String, "all");
 
+	// fork additions (not present upstream, see FORK.md)
+	CONF("special_focus_trap", Bool, false);
+	CONF("movewindow_monitor_fallthrough", Bool, false);
+
 #undef CONF
 
 	HyprlandAPI::addTiledAlgo(PHANDLE, "hy3", &typeid(Hy3Layout), []() -> UP<Layout::ITiledAlgorithm> {

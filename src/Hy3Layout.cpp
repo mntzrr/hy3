@@ -764,20 +764,32 @@ void Hy3Layout::changeGroupEphemeralityOn(Hy3Node& node, bool ephemeral) {
 	);
 }
 
-void Hy3Layout::shiftNode(Hy3Node& node, ShiftDirection direction, bool once, bool visible) {
-	this->shiftOrGetFocus(node, direction, true, once, visible);
+void Hy3Layout::shiftNode(
+    Hy3Node& node,
+    ShiftDirection direction,
+    bool once,
+    bool visible,
+    bool monitor_fallthrough
+) {
+	this->shiftOrGetFocus(node, direction, true, once, visible, monitor_fallthrough);
 }
 
 void Hy3Layout::shiftWindow(
     const CWorkspace* workspace,
     ShiftDirection direction,
     bool once,
-    bool visible
+    bool visible,
+    bool monitor_fallthrough
 ) {
+	// fork: the config flag turns the fallthrough on for every movewindow, the
+	// argument turns it on for a single invocation.
+	static const auto fallthrough_default =
+	    CConfigValue<Config::INTEGER>("plugin:hy3:movewindow_monitor_fallthrough");
+
 	auto* node = this->getWorkspaceFocusedNode(workspace);
 	if (node == nullptr) return;
 
-	this->shiftNode(*node, direction, once, visible);
+	this->shiftNode(*node, direction, once, visible, monitor_fallthrough || *fallthrough_default);
 }
 
 void Hy3Layout::shiftFocus(
@@ -828,7 +840,24 @@ void Hy3Layout::shiftFocus(
 	}
 }
 
+// fork: true if the user is currently focused on a window living on a special
+// (scratchpad) workspace. deliberately keyed off the focused window rather than
+// the layout's workspace - a visible-but-unfocused scratchpad should not stop
+// directional focus from leaving the monitor.
+static bool focusedOnSpecialWorkspace() {
+	auto window = Desktop::focusState()->window();
+	if (window == nullptr || !valid(window->m_workspace)) return false;
+	return window->m_workspace->m_isSpecialWorkspace;
+}
+
 Hy3Node* Hy3Layout::focusMonitor(ShiftDirection direction) {
+	// fork: with special_focus_trap enabled, directional focus never escapes a
+	// scratchpad to another monitor - it simply stays put.
+	static const auto special_focus_trap =
+	    CConfigValue<Config::INTEGER>("plugin:hy3:special_focus_trap");
+
+	if (*special_focus_trap && focusedOnSpecialWorkspace()) return nullptr;
+
 	auto next_monitor = State::monitorState()
 													->query()
 													.relativeTo(this->monitor().lock())
@@ -865,23 +894,102 @@ Hy3Node* Hy3Layout::focusMonitor(ShiftDirection direction) {
 	return nullptr;
 }
 
+PHLMONITOR Hy3Layout::monitorInDirection(ShiftDirection direction) {
+	return State::monitorState()
+	    ->query()
+	    .relativeTo(this->monitor().lock())
+	    .inDirection(shiftToMathDirection(direction))
+	    .run();
+}
+
+// fork: resolve a monitor argument accepting both hy3 shift directions
+// (l/r/u/d) and hyprland's monitor selectors (+1, -1, current, <name>,
+// desc:<description>, <id>).
+PHLMONITOR Hy3Layout::monitorFromSelector(const std::string& selector) {
+	if (selector.empty()) return nullptr;
+
+	if (selector == "l" || selector == "left") return this->monitorInDirection(ShiftDirection::Left);
+	if (selector == "r" || selector == "right") return this->monitorInDirection(ShiftDirection::Right);
+	if (selector == "u" || selector == "up") return this->monitorInDirection(ShiftDirection::Up);
+	if (selector == "d" || selector == "down") return this->monitorInDirection(ShiftDirection::Down);
+
+	return State::monitorState()
+	    ->query()
+	    .relativeTo(this->monitor().lock())
+	    .selector(selector)
+	    .run();
+}
+
 bool Hy3Layout::shiftMonitor(Hy3Node& node, ShiftDirection direction, bool follow) {
-	auto next_monitor = State::monitorState()
-													->query()
-													.relativeTo(this->monitor().lock())
-													.inDirection(shiftToMathDirection(direction))
-													.run();
+	return this->moveToMonitor(
+	    node.layout()->workspace().get(),
+	    this->monitorInDirection(direction),
+	    follow,
+	    false
+	);
+}
 
+// fork: move the focused node - a window, or a whole group when focus is
+// raised - into the active workspace of another monitor, keeping it intact in
+// the destination hy3 tree. unlike hyprland's own monitor move, `follow` is
+// honoured: with it unset focus is left where the user put it.
+bool Hy3Layout::moveToMonitor(CWorkspace* origin, PHLMONITOR target, bool follow, bool warp) {
+	if (!target || origin == nullptr) return false;
 
-	if (next_monitor) {
-		Desktop::focusState()->rawMonitorFocus(next_monitor);
-		auto next_workspace = next_monitor->m_activeWorkspace;
-		if (next_workspace) {
-			moveNodeToWorkspace(node.layout()->workspace().get(), next_workspace->m_name, follow, false);
-			return true;
+	auto origin_monitor = this->monitor().lock();
+	if (origin_monitor == target) return false;
+
+	auto next_workspace = target->m_activeWorkspace;
+	if (!valid(next_workspace)) return false;
+
+	if (follow) Desktop::focusState()->rawMonitorFocus(target);
+
+	this->moveNodeToWorkspace(origin, next_workspace->m_name, follow, warp);
+
+	// moving the focused node off screen can drag focus along with it, so put
+	// focus back where it was.
+	if (!follow && origin_monitor) Desktop::focusState()->rawMonitorFocus(origin_monitor);
+
+	return true;
+}
+
+bool Hy3Layout::moveNodeToMonitor(
+    CWorkspace* origin,
+    const std::string& selector,
+    bool follow,
+    bool warp
+) {
+	return this->moveToMonitor(origin, this->monitorFromSelector(selector), follow, warp);
+}
+
+// fork: scratchpad aware floating toggle. a window sitting on a special
+// workspace is unmounted onto `unmount_workspace` - or, when that is empty, the
+// workspace visible underneath it - otherwise floating is toggled as usual.
+void Hy3Layout::toggleFloating(CWorkspace* workspace, const std::string& unmount_workspace, bool warp) {
+	auto window = Desktop::focusState()->window();
+
+	// prefer the focused window's workspace: a visible but unfocused scratchpad
+	// must not hijack the action.
+	auto* ws = window != nullptr && valid(window->m_workspace) ? window->m_workspace.get() : workspace;
+	if (ws == nullptr) return;
+
+	if (ws->m_isSpecialWorkspace) {
+		auto target = unmount_workspace;
+
+		if (target.empty()) {
+			// a monitor's active workspace is never the special one - that is
+			// tracked separately - so this is the workspace underneath.
+			auto monitor = ws->m_monitor;
+			if (!monitor || !valid(monitor->m_activeWorkspace)) return;
+			target = monitor->m_activeWorkspace->m_name;
 		}
+
+		this->moveNodeToWorkspace(ws, target, true, warp);
+		return;
 	}
-	return false;
+
+	if (window == nullptr || !ws->m_space) return;
+	ws->m_space->toggleTargetFloating(window->layoutTarget());
 }
 
 void Hy3Layout::toggleFocusLayer(const CWorkspace* workspace, bool warp) {
@@ -1479,7 +1587,8 @@ Hy3Node* Hy3Layout::shiftOrGetFocus(
     ShiftDirection direction,
     bool shift,
     bool once,
-    bool visible
+    bool visible,
+    bool monitor_fallthrough
 ) {
 	auto* expand_actor = &node.getExpandActor();
 	auto* break_origin = &expand_actor->getPlacementActor();
@@ -1515,6 +1624,11 @@ Hy3Node* Hy3Layout::shiftOrGetFocus(
 
 		if (break_parent->is_root()) {
 			if (!shift) return focusMonitor(direction);
+
+			// fork: at the edge of the layout, hand the node to the adjacent
+			// monitor instead of wrapping it into a new group. shiftMonitor
+			// extracts the node, so the traversal state below is dead after this.
+			if (monitor_fallthrough && this->shiftMonitor(node, direction, true)) return nullptr;
 
 			auto new_layout =
 			    shiftIsVertical(direction) ? Hy3GroupLayout::SplitV : Hy3GroupLayout::SplitH;

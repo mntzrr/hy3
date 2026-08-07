@@ -140,12 +140,25 @@ public:
 	void toggleTabGroupOn(Hy3Node&);
 	void changeGroupToOppositeOn(Hy3Node&);
 	void changeGroupEphemeralityOn(Hy3Node&, bool ephemeral);
-	void shiftNode(Hy3Node&, ShiftDirection, bool once, bool visible);
-	void shiftWindow(const CWorkspace* workspace, ShiftDirection, bool once, bool visible);
+	void shiftNode(Hy3Node&, ShiftDirection, bool once, bool visible, bool monitor_fallthrough = false);
+	void shiftWindow(
+	    const CWorkspace* workspace,
+	    ShiftDirection,
+	    bool once,
+	    bool visible,
+	    bool monitor_fallthrough = false
+	);
 	void shiftFocus(const CWorkspace* workspace, ShiftDirection, bool visible, bool warp);
 	void toggleFocusLayer(const CWorkspace* workspace, bool warp);
 	bool shiftMonitor(Hy3Node&, ShiftDirection, bool follow);
 	Hy3Node* focusMonitor(ShiftDirection);
+
+	// fork additions
+	PHLMONITOR monitorInDirection(ShiftDirection);
+	PHLMONITOR monitorFromSelector(const std::string& selector);
+	bool moveToMonitor(CWorkspace* origin, PHLMONITOR target, bool follow, bool warp);
+	bool moveNodeToMonitor(CWorkspace* origin, const std::string& selector, bool follow, bool warp);
+	void toggleFloating(CWorkspace* workspace, const std::string& unmount_workspace, bool warp);
 
 	void warpCursor();
 	void moveNodeToWorkspace(CWorkspace* origin, std::string wsname, bool follow, bool warp);
@@ -189,7 +202,14 @@ private:
 	// if shift is true, shift the window in the given direction, returning
 	// nullptr, if shift is false, return the window in the given direction or
 	// nullptr. if once is true, only one group will be broken out of / into
-	Hy3Node* shiftOrGetFocus(Hy3Node&, ShiftDirection, bool shift, bool once, bool visible);
+	Hy3Node* shiftOrGetFocus(
+	    Hy3Node&,
+	    ShiftDirection,
+	    bool shift,
+	    bool once,
+	    bool visible,
+	    bool monitor_fallthrough = false
+	);
 
 	void updateAutotileWorkspaces();
 	bool shouldAutotileWorkspace(const CWorkspace* workspace);

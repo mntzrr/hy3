@@ -433,11 +433,11 @@ static SDispatchResult dispatch_warpcursor(std::string value) {
 	return warpCursor();
 }
 
-static SDispatchResult moveWindow(ShiftDirection shift, bool once, bool visible) {
+static SDispatchResult moveWindow(ShiftDirection shift, bool once, bool visible, bool monitor) {
 	auto* hy3 = hy3InstanceForAction();
 	if (!hy3) return SDispatchResult {};
 
-	hy3->shiftWindow(hy3->workspace().get(), shift, once, visible);
+	hy3->shiftWindow(hy3->workspace().get(), shift, once, visible, monitor);
 	return SDispatchResult {};
 }
 
@@ -448,24 +448,29 @@ static int luaMoveWindow(lua_State* L) {
 	auto shift = luaShiftArg(L, 1, FN);
 	bool once = false;
 	bool visible = false;
+	bool monitor = false;
 
 	if (luaHasOptionsTable(L, 2, FN)) {
 		once = LuaInternal::tableOptBool(L, 2, "once").value_or(false);
 		visible = LuaInternal::tableOptBool(L, 2, "visible").value_or(false);
+		// fork: fall through to the adjacent monitor at the edge of the layout
+		monitor = LuaInternal::tableOptBool(L, 2, "monitor").value_or(false);
 	}
 
 	auto dspMoveWindow = [](lua_State* L) -> int {
 		auto shift = static_cast<ShiftDirection>(lua_tointeger(L, lua_upvalueindex(1)));
 		bool once = lua_toboolean(L, lua_upvalueindex(2));
 		bool visible = lua_toboolean(L, lua_upvalueindex(3));
-		moveWindow(shift, once, visible);
+		bool monitor = lua_toboolean(L, lua_upvalueindex(4));
+		moveWindow(shift, once, visible, monitor);
 		return 0;
 	};
 
 	lua_pushinteger(L, static_cast<lua_Integer>(shift));
 	lua_pushboolean(L, once);
 	lua_pushboolean(L, visible);
-	lua_pushcclosure(L, dspMoveWindow, 3);
+	lua_pushboolean(L, monitor);
+	lua_pushcclosure(L, dspMoveWindow, 4);
 	return 1;
 }
 
@@ -477,6 +482,7 @@ static SDispatchResult dispatch_movewindow(std::string value) {
 	int i = 1;
 	bool once = false;
 	bool visible = false;
+	bool monitor = false;
 
 	if (args[i] == "once") {
 		once = true;
@@ -488,7 +494,13 @@ static SDispatchResult dispatch_movewindow(std::string value) {
 		i++;
 	}
 
-	return moveWindow(*shift, once, visible);
+	// fork: fall through to the adjacent monitor at the edge of the layout
+	if (args[i] == "monitor") {
+		monitor = true;
+		i++;
+	}
+
+	return moveWindow(*shift, once, visible, monitor);
 }
 
 static SDispatchResult moveToWorkspace(std::string workspace, bool follow, std::optional<bool> warp_override) {
@@ -949,6 +961,118 @@ static SDispatchResult dispatch_debug(std::string arg) {
 	return debugNodes();
 }
 
+// ---------------------------------------------------------------------------
+// fork additions (not present upstream, see FORK.md)
+// ---------------------------------------------------------------------------
+
+static SDispatchResult
+moveToMonitor(std::string monitor, bool follow, std::optional<bool> warp_override) {
+	auto* hy3 = hy3InstanceForAction(true);
+	if (!hy3) return SDispatchResult {};
+
+	static const auto no_cursor_warps = CConfigValue<Config::INTEGER>("cursor:no_warps");
+
+	auto warp_cursor = follow && warp_override.value_or(!*no_cursor_warps);
+
+	if (!hy3->moveNodeToMonitor(hy3->workspace().get(), monitor, follow, warp_cursor))
+		return { .success = false, .error = "no monitor matching '" + monitor + "'" };
+
+	return SDispatchResult {};
+}
+
+static int luaMoveToMonitor(lua_State* L) {
+	static constexpr const char* FN = "hl.plugin.hy3.move_to_monitor";
+	luaCheckArgCount(L, FN, 1, 2);
+
+	auto monitor = luaStringArg(L, 1, FN, "monitor");
+	if (monitor == "")
+		return luaL_error(L, "%s: monitor must not be empty", FN);
+
+	bool follow = false;
+	std::optional<bool> warp;
+
+	if (luaHasOptionsTable(L, 2, FN)) {
+		follow = LuaInternal::tableOptBool(L, 2, "follow").value_or(false);
+		warp = LuaInternal::tableOptBool(L, 2, "warp");
+	}
+
+	auto dspMoveToMonitor = [](lua_State* L) -> int {
+		std::string monitor = lua_tostring(L, lua_upvalueindex(1));
+		bool follow = lua_toboolean(L, lua_upvalueindex(2));
+		moveToMonitor(monitor, follow, luaOptionalBoolFromUpvalue(L, 3));
+		return 0;
+	};
+
+	lua_pushstring(L, monitor.c_str());
+	lua_pushboolean(L, follow);
+	lua_pushinteger(L, luaOptionalBoolMode(warp));
+	lua_pushcclosure(L, dspMoveToMonitor, 3);
+	return 1;
+}
+
+static SDispatchResult dispatch_move_to_monitor(std::string value) {
+	auto args = CVarList(value);
+
+	auto monitor = args[0];
+	if (monitor == "") return SDispatchResult {};
+
+	auto follow = args[1] == "follow";
+
+	std::optional<bool> warp_override;
+	if (args[2] == "nowarp") warp_override = false;
+	else if (args[2] == "warp") warp_override = true;
+
+	return moveToMonitor(monitor, follow, warp_override);
+}
+
+static SDispatchResult toggleFloating(std::string workspace, std::optional<bool> warp_override) {
+	auto* hy3 = hy3InstanceForAction(true);
+	if (!hy3) return SDispatchResult {};
+
+	static const auto no_cursor_warps = CConfigValue<Config::INTEGER>("cursor:no_warps");
+
+	auto warp_cursor = warp_override.value_or(!*no_cursor_warps);
+
+	hy3->toggleFloating(hy3->workspace().get(), workspace, warp_cursor);
+	return SDispatchResult {};
+}
+
+static int luaToggleFloating(lua_State* L) {
+	static constexpr const char* FN = "hl.plugin.hy3.toggle_floating";
+	luaCheckArgCount(L, FN, 0, 1);
+
+	std::string workspace;
+	std::optional<bool> warp;
+
+	if (luaHasOptionsTable(L, 1, FN)) {
+		workspace = LuaInternal::tableOptStr(L, 1, "workspace").value_or("");
+		warp = LuaInternal::tableOptBool(L, 1, "warp");
+	}
+
+	auto dspToggleFloating = [](lua_State* L) -> int {
+		std::string workspace = lua_tostring(L, lua_upvalueindex(1));
+		toggleFloating(workspace, luaOptionalBoolFromUpvalue(L, 2));
+		return 0;
+	};
+
+	lua_pushstring(L, workspace.c_str());
+	lua_pushinteger(L, luaOptionalBoolMode(warp));
+	lua_pushcclosure(L, dspToggleFloating, 2);
+	return 1;
+}
+
+static SDispatchResult dispatch_togglefloating(std::string value) {
+	auto args = CVarList(value);
+
+	auto workspace = args[0];
+
+	std::optional<bool> warp_override;
+	if (args[1] == "nowarp") warp_override = false;
+	else if (args[1] == "warp") warp_override = true;
+
+	return toggleFloating(workspace, warp_override);
+}
+
 static void registerLuaDispatchers() {
 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "make_group", luaMakeGroup);
 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "change_group", luaChangeGroup);
@@ -966,6 +1090,10 @@ static void registerLuaDispatchers() {
 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "lock_tab", luaLockTab);
 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "equalize", luaEqualize);
 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "debug_nodes", luaDebugNodes);
+
+	// fork additions
+	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "move_to_monitor", luaMoveToMonitor);
+	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "toggle_floating", luaToggleFloating);
 }
 
 void registerDispatchers() {
@@ -985,5 +1113,10 @@ void registerDispatchers() {
 	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:locktab", dispatch_locktab);
 	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:equalize", dispatch_equalize);
 	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:debugnodes", dispatch_debug);
+
+	// fork additions
+	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:movetomonitor", dispatch_move_to_monitor);
+	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:togglefloating", dispatch_togglefloating);
+
 	registerLuaDispatchers();
 }
