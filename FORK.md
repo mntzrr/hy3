@@ -59,8 +59,9 @@ left where the user put it.
   a thin wrapper over `moveToMonitor()`.
 - `follow = false` needs more than skipping the focus call: the moved node keeps keyboard
   focus even once it is on another screen, leaving the focused monitor and the focused window
-  on different displays. `refocusMonitor()` hands focus back to the last focused window on the
-  origin monitor, preferring its special workspace when one is up.
+  on different displays. `refocusMonitor()` hands focus back to the origin monitor. It asks
+  **hy3** for that workspace's focused node rather than `getLastFocusedWindow()`, which still
+  names the node that was just moved away and so chases it onto the other screen.
 - Argument handling: `l`/`r`/`u`/`d` map to `monitorInDirection()`; `+n`/`-n` are resolved by
   cycling `State::monitorState()->monitors()` with wraparound, because `CMonitorQuery::selector`
   does **not** understand relative offsets (it silently matches nothing); everything else
