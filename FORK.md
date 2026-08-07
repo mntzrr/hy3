@@ -7,6 +7,32 @@ Lua wrappers and `hyprctl`/`jq` shell scripts. There is no intent to upstream th
 Everything below is **off by default** — with no extra configuration this fork behaves exactly
 like upstream. New behaviour is gated behind config flags; new dispatchers are purely additive.
 
+## Installing with hyprpm
+
+hyprpm clones with git, and git clones local paths, so this repo can be installed straight
+from disk — no need to push anywhere. Only committed work is installed.
+
+```sh
+hyprpm remove hy3                         # drop upstream hy3; only one may own the name
+hyprpm add /home/mntzr/Dev/hy3 master     # explicit rev => commit_pins are ignored
+hyprpm enable hy3
+hyprpm reload -n
+```
+
+Pass the revision. Without it hyprpm consults `commit_pins` in `hyprpm.toml`, and a pin
+matching the running Hyprland would check out an **upstream** commit, silently dropping every
+fork commit. After installing, confirm what actually landed:
+
+```sh
+grep hash /var/cache/hyprpm/mntzr/hy3/state.toml   # must equal this repo's HEAD
+```
+
+hyprpm elevates itself with `sudo`/`doas` for the parts that write under `/var/cache/hyprpm`,
+so these need a terminal that can prompt.
+
+To pick up new fork commits: commit here, then `hyprpm update`, or re-run the `remove`/`add`
+pair with the new revision if the pinned rev needs to move.
+
 ## Staying in sync
 
 ```sh
