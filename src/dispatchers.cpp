@@ -405,7 +405,14 @@ static int luaToggleFocusLayer(lua_State* L) {
 }
 
 static SDispatchResult dispatch_togglefocuslayer(std::string value) {
-	return toggleFocusLayer(value != "nowarp");
+	// cursor:no_warps is the default here as it is for every other dispatcher
+	// that warps; an explicit warp/nowarp argument still overrides it. This
+	// alone defaulted to warping regardless of the global setting.
+	static const auto no_cursor_warps = CConfigValue<Config::INTEGER>("cursor:no_warps");
+
+	if (value == "nowarp") return toggleFocusLayer(false);
+	if (value == "warp") return toggleFocusLayer(true);
+	return toggleFocusLayer(!*no_cursor_warps);
 }
 
 static SDispatchResult warpCursor() {
