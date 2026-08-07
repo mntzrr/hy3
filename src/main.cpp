@@ -3,6 +3,7 @@
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
+#include <hyprland/src/state/MonitorState.hpp>
 #include <hyprland/src/version.h>
 
 #include "dispatchers.hpp"
@@ -145,6 +146,24 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 		node->updateTabBarRecursive();
 	});
 
+	g_monitorFocusListener = Event::bus()->m_events.monitor.focused.listen([](PHLMONITOR monitor) {
+		g_focusedMonitor = monitor;
+
+		// every visible tab bar has to be redrawn, not just the newly focused
+		// monitor's: the one being left has to lose its active highlight.
+		for (auto& mon: State::monitorState()->monitors()) {
+			if (!mon) continue;
+
+			for (auto& ws: {mon->m_activeWorkspace, mon->m_activeSpecialWorkspace}) {
+				if (!valid(ws)) continue;
+				auto* hy3 = hy3InstanceForWorkspace(ws);
+				if (!hy3) continue;
+				auto* root = hy3->getWorkspaceRootGroup(ws.get());
+				if (root) root->updateDecos();
+			}
+		}
+	});
+
 	registerDispatchers();
 
 	HyprlandAPI::reloadConfig();
@@ -157,6 +176,8 @@ APICALL EXPORT void PLUGIN_EXIT() {
 	g_tickListener.reset();
 	g_windowTitleListener.reset();
 	g_urgentListener.reset();
+	g_monitorFocusListener.reset();
+	g_focusedMonitor.reset();
 
 	// fork: layout instances belong to hyprland and can outlive this call, so
 	// their state has to be torn down explicitly. g_tabGroups below holds weak

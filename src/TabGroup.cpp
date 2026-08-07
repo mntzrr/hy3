@@ -498,8 +498,13 @@ void Hy3TabBar::updateNodeList(std::list<UP<Hy3Node>>& nodes) {
 		auto active = parent_focused && (parent_group.focused_child == node->get() || parent_group.group_focused);
 		entry->setActive(active);
 
-		auto last_monitor = Desktop::focusState()->monitor();
-		entry->setMonitorActive(active && (!last_monitor || (*node)->layout()->monitor() == last_monitor));
+		// g_focusedMonitor, not focusState()->monitor(): the latter is still the
+		// previous monitor while monitor.focused is being delivered, which is
+		// exactly when this runs on a monitor switch.
+		auto focused_monitor = g_focusedMonitor;
+		entry->setMonitorActive(
+		    active && (!focused_monitor || (*node)->layout()->monitor() == focused_monitor)
+		);
 
 		entry->setUrgent((*node)->isUrgent());
 		entry->setWindowTitle((*node)->getTitle());
