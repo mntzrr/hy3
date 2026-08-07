@@ -154,7 +154,9 @@ public:
 	void shiftFocus(const CWorkspace* workspace, ShiftDirection, bool visible, bool warp);
 	void toggleFocusLayer(const CWorkspace* workspace, bool warp);
 	bool shiftMonitor(Hy3Node&, ShiftDirection, bool follow);
-	Hy3Node* focusMonitor(ShiftDirection);
+	// focusMonitor focuses the target itself. Callers must not focus the
+	// returned node again - see the note in shiftOrGetFocus.
+	Hy3Node* focusMonitor(ShiftDirection, bool warp = true);
 
 	// fork additions
 	void shutdown();
@@ -212,7 +214,8 @@ private:
 	    bool shift,
 	    bool once,
 	    bool visible,
-	    bool monitor_fallthrough = false
+	    bool monitor_fallthrough = false,
+	    bool warp = true
 	);
 
 	void updateAutotileWorkspaces();

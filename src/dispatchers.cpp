@@ -326,7 +326,7 @@ static SDispatchResult moveFocus(ShiftDirection shift, bool visible, std::option
 	auto warp_cursor = warp_override.value_or(!*no_cursor_warps);
 
 	if (Fullscreen::controller()->hasFullscreen(ws)) {
-		hy3->focusMonitor(shift);
+		hy3->focusMonitor(shift, warp_cursor);
 		return SDispatchResult {};
 	}
 

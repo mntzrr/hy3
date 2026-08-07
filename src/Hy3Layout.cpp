@@ -850,11 +850,11 @@ void Hy3Layout::shiftFocus(
 
 	auto* node = this->getWorkspaceFocusedNode(workspace);
 	if (node == nullptr) {
-		focusMonitor(direction);
+		focusMonitor(direction, warp);
 		return;
 	}
 
-	auto* target = this->shiftOrGetFocus(*node, direction, false, false, visible);
+	auto* target = this->shiftOrGetFocus(*node, direction, false, false, visible, false, warp);
 
 	if (target != nullptr) {
 		if (warp) {
@@ -878,7 +878,7 @@ static bool focusedOnSpecialWorkspace() {
 	return window->m_workspace->m_isSpecialWorkspace;
 }
 
-Hy3Node* Hy3Layout::focusMonitor(ShiftDirection direction) {
+Hy3Node* Hy3Layout::focusMonitor(ShiftDirection direction, bool warp) {
 	// fork: with special_focus_trap enabled, directional focus never escapes a
 	// scratchpad to another monitor - it simply stays put.
 	static const auto special_focus_trap =
@@ -905,7 +905,10 @@ Hy3Node* Hy3Layout::focusMonitor(ShiftDirection direction) {
 				if (auto* hy3 = hy3InstanceForWorkspace(next_workspace)) {
 					auto found_node = hy3->getNodeFromWindow(target_window.get());
 					if (found_node) {
-						found_node->focus(true, Desktop::FOCUS_REASON_KEYBIND);
+						// fork: honour the caller's warp preference. This was
+						// hardcoded true, so `hy3:movefocus <dir> nowarp` warped
+						// the cursor anyway whenever focus crossed a monitor.
+						found_node->focus(warp, Desktop::FOCUS_REASON_KEYBIND);
 						return found_node;
 					}
 				} else {
@@ -915,7 +918,10 @@ Hy3Node* Hy3Layout::focusMonitor(ShiftDirection direction) {
 			}
 		}
 
-		if (!found) {
+		// nothing focusable there: centring the cursor is the only thing that
+		// makes the monitor focus visible, but it is still a warp, so it obeys
+		// the same preference.
+		if (!found && warp) {
 			Hy3Layout::warpCursorWithFocus(next_monitor->m_position + next_monitor->m_size / 2);
 		}
 	}
@@ -1729,7 +1735,8 @@ Hy3Node* Hy3Layout::shiftOrGetFocus(
     bool shift,
     bool once,
     bool visible,
-    bool monitor_fallthrough
+    bool monitor_fallthrough,
+    bool warp
 ) {
 	auto* expand_actor = &node.getExpandActor();
 	auto* break_origin = &expand_actor->getPlacementActor();
@@ -1770,7 +1777,15 @@ Hy3Node* Hy3Layout::shiftOrGetFocus(
 		}
 
 		if (break_parent->is_root()) {
-			if (!shift) return focusMonitor(direction);
+			// fork: focusMonitor focuses (and warps to) the target itself.
+			// Returning it made shiftFocus focus the very same node a second
+			// time, with a second recalcGeometry behind it. Hand back nullptr:
+			// to every caller that means "nothing further to focus", which is
+			// exactly right once focusMonitor has done the work.
+			if (!shift) {
+				focusMonitor(direction, warp);
+				return nullptr;
+			}
 
 			// fork: at the edge of the layout, hand the node to the adjacent
 			// monitor instead of wrapping it into a new group. shiftMonitor
