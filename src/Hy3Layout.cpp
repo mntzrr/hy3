@@ -212,7 +212,7 @@ void Hy3Layout::newTarget(SP<Layout::ITarget> target) {
 	this->insertNode(std::move(node));
 }
 
-void Hy3Layout::insertNode(UP<Hy3Node> node_up, std::optional<Vector2D> focalPoint) {
+Hy3Node* Hy3Layout::insertNode(UP<Hy3Node> node_up, std::optional<Vector2D> focalPoint) {
 	if (node_up->parent != nullptr) {
 		hy3_log(
 		    ERR,
@@ -220,7 +220,7 @@ void Hy3Layout::insertNode(UP<Hy3Node> node_up, std::optional<Vector2D> focalPoi
 		    (uintptr_t) node_up.get(),
 		    (uintptr_t) node_up->parent.get()
 		);
-		return;
+		return nullptr;
 	}
 
 	auto ws = this->workspace();
@@ -231,7 +231,7 @@ void Hy3Layout::insertNode(UP<Hy3Node> node_up, std::optional<Vector2D> focalPoi
 		    (uintptr_t) node_up.get(),
 		    ws ? ws->m_id : -1
 		);
-		return;
+		return nullptr;
 	}
 
 	node_up->size_ratio = 1.0;
@@ -294,7 +294,7 @@ void Hy3Layout::insertNode(UP<Hy3Node> node_up, std::optional<Vector2D> focalPoi
 	if (opening_into->is_target()) {
 		hy3_log(ERR, "opening_into node ({:x}) was not a group node", (uintptr_t) opening_into);
 		errorNotif();
-		return;
+		return nullptr;
 	}
 
 	{
@@ -372,6 +372,8 @@ void Hy3Layout::insertNode(UP<Hy3Node> node_up, std::optional<Vector2D> focalPoi
 	node->markFocused();
 	this->recalcGeometry();
 	this->updateGroupBorderColors();
+
+	return node;
 }
 
 void Hy3Layout::movedTarget(SP<Layout::ITarget> target, std::optional<Vector2D> focalPoint) {
@@ -1178,7 +1180,18 @@ void Hy3Layout::moveNodeToWorkspace(
 
 		g_suppressInsert = false;
 
-		destLayout->insertNode(std::move(node_up));
+		// fork: insertNode has taken ownership. When it rejects the node it has
+		// already destroyed it, so `node` is dangling and everything below -
+		// including the follow branch's focus() - would be a use after free.
+		if (destLayout->insertNode(std::move(node_up)) == nullptr) {
+			hy3_log(
+			    ERR,
+			    "insertNode rejected node moved to workspace {}; its windows are now there with no node",
+			    workspace->m_id
+			);
+			errorNotif();
+			return;
+		}
 
 		Desktop::Rule::ruleEngine()->updateAllRules();
 

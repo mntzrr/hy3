@@ -117,7 +117,10 @@ public:
 	SP<Layout::ITarget> getNextCandidate(SP<Layout::ITarget> old) override;
 
 	// Hy3-specific public methods
-	void insertNode(UP<Hy3Node> node, std::optional<Vector2D> focalPoint = std::nullopt);
+	// Returns the inserted node, or nullptr when it could not be placed - in
+	// which case the node has been *destroyed*, since ownership was taken. A
+	// caller holding a raw pointer to it must not touch it again.
+	Hy3Node* insertNode(UP<Hy3Node> node, std::optional<Vector2D> focalPoint = std::nullopt);
 	void onWindowFocusChange(PHLWINDOW window);
 	void updateGroupBorderColors();
 
