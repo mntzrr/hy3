@@ -41,8 +41,10 @@ For comparison, a SIGSEGV whose trace runs `exit` → `__cxa_finalize` →
 `Aquamarine::CDRMBackend`/`CDRMRenderer` destructors → `eglDestroyContext` is **not** hy3: that
 is an EGL teardown crash during process exit, after the session is already ending.
 
+Use the throwaway instance instead:
+
 ```sh
-test/nested.sh start 2   # throwaway Hyprland, this build loaded, two 1280x800 monitors
+test/nested.sh start 2   # throwaway Hyprland, this build loaded, two 1280x720 monitors
 test/smoke.sh            # 31 assertions over the fork's behaviour
 test/nested.sh stop
 ```
