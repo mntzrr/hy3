@@ -53,13 +53,18 @@ tree — Hyprland's own monitor move can't do that. `follow` is honoured: withou
 left where the user put it.
 
 - `src/Hy3Layout.cpp` — `monitorInDirection()`, `monitorFromSelector()`, `moveToMonitor()`,
-  `moveNodeToMonitor()`.
+  `moveNodeToMonitor()`, `refocusMonitor()`.
 - Upstream's `shiftMonitor()` was dead code (its call sites were removed in `827dae1`) and
   focused the destination monitor unconditionally, so `follow = false` did not work. It is now
-  a thin wrapper over `moveToMonitor()`, which only touches focus when following and restores
-  the origin monitor otherwise.
-- Accepts hy3 shift directions (`l`/`r`/`u`/`d`) as well as Hyprland monitor selectors
-  (`+1`, `-1`, `current`, name, `desc:…`, id).
+  a thin wrapper over `moveToMonitor()`.
+- `follow = false` needs more than skipping the focus call: the moved node keeps keyboard
+  focus even once it is on another screen, leaving the focused monitor and the focused window
+  on different displays. `refocusMonitor()` hands focus back to the last focused window on the
+  origin monitor, preferring its special workspace when one is up.
+- Argument handling: `l`/`r`/`u`/`d` map to `monitorInDirection()`; `+n`/`-n` are resolved by
+  cycling `State::monitorState()->monitors()` with wraparound, because `CMonitorQuery::selector`
+  does **not** understand relative offsets (it silently matches nothing); everything else
+  (name, `desc:…`, id) is passed to `CMonitorQuery::selector`.
 
 ### 3. `plugin:hy3:movewindow_monitor_fallthrough` (bool, default false) + `hy3:movewindow … , monitor`
 
@@ -90,6 +95,15 @@ Build against the Hyprland release the headers belong to:
 
 ```sh
 cmake -DCMAKE_BUILD_TYPE=Release -B build && cmake --build build
+```
+
+Note that on Hyprland 0.56 a config load resets plugin config values to the defaults the
+plugin registered, *after* the config file has been parsed — so `plugin:hy3:*` settings made
+from a Lua config file never survive, guarded or not. Apply them with `hyprctl eval` once the
+plugin is loaded:
+
+```sh
+hyprctl eval "hl.config({ plugin = { hy3 = { special_focus_trap = true } } })"
 ```
 
 Then, with a nested split and a tab group across two monitors:

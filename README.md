@@ -398,9 +398,10 @@ plugin {
  - `hy3:equalize, [workspace]` - equalize window sizes in group
    - no argument: equalizes immediate siblings of the focused window
    - `workspace`: equalizes all windows across the entire workspace tree
- - **(fork)** `hy3:movetomonitor, <l | u | d | r | left | down | up | right | +1 | -1 | current | <name> | <id> | desc:<description>>, [follow], [warp | nowarp]` - move the active node into the active workspace of another monitor
+ - **(fork)** `hy3:movetomonitor, <l | u | d | r | left | down | up | right | +n | -n | <name> | <id> | desc:<description>>, [follow], [warp | nowarp]` - move the active node into the active workspace of another monitor
    - the node is moved intact, so a raised group keeps its structure and tabs in the destination layout
-   - `follow` - change focus to the moved node. without it focus is left where it was, unlike hyprland's own monitor move.
+   - `+n` / `-n` cycle through the monitor list, wrapping at either end
+   - `follow` - change focus to the moved node. without it focus is handed back to the last focused window on the monitor the node left, unlike hyprland's own monitor move.
    - `warp` - warp the mouse to the moved window, even if `general:no_cursor_warps` is true. only applies with `follow`.
    - `nowarp` - does not warp the mouse to the moved window, even if `general:no_cursor_warps` is false.
  - **(fork)** `hy3:togglefloating, [<workspace>], [warp | nowarp]` - toggle the focused window's floating state, unless it is on a special (scratchpad) workspace, in which case it is unmounted onto a regular workspace and focus follows it
