@@ -6,7 +6,10 @@ fork adds, how changes are kept conflict-minimal, and how to install it with hyp
 
 ## Ground rules
 
-- **No AI/assistant attribution in commits.** No `Co-Authored-By`, no `Assisted-by:` trailer.
+- **No AI/assistant attribution in commits.** No `Co-Authored-By`, no `Assisted-by:` trailer,
+  no "generated with …" footer. AI assistance is accepted — naming the tool in the history is
+  not, because it turns `git log` into permanent advertising for one vendor or another and
+  tells a future reader nothing about the change. See `CONTRIBUTING.md`.
 - Prefix fork commits `fork:` so the series is identifiable across rebases.
 - **Never push unless explicitly told to.** The remote is the user's own fork.
 - The user's Hyprland config is at `~/.config/hypr` (note: `hypr`, not `hyprland`), and it is
