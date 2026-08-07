@@ -902,9 +902,9 @@ PHLMONITOR Hy3Layout::monitorInDirection(ShiftDirection direction) {
 	    .run();
 }
 
-// fork: resolve a monitor argument accepting both hy3 shift directions
-// (l/r/u/d) and hyprland's monitor selectors (+1, -1, current, <name>,
-// desc:<description>, <id>).
+// fork: resolve a monitor argument accepting hy3 shift directions (l/r/u/d),
+// a relative offset (+n / -n, wrapping around the enabled monitors), and
+// hyprland's own selectors (<name>, desc:<description>, <id>).
 PHLMONITOR Hy3Layout::monitorFromSelector(const std::string& selector) {
 	if (selector.empty()) return nullptr;
 
@@ -913,11 +913,31 @@ PHLMONITOR Hy3Layout::monitorFromSelector(const std::string& selector) {
 	if (selector == "u" || selector == "up") return this->monitorInDirection(ShiftDirection::Up);
 	if (selector == "d" || selector == "down") return this->monitorInDirection(ShiftDirection::Down);
 
-	return State::monitorState()
-	    ->query()
-	    .relativeTo(this->monitor().lock())
-	    .selector(selector)
-	    .run();
+	// CMonitorQuery::selector does not understand relative offsets, so cycle
+	// through the monitor list by hand.
+	if (selector[0] == '+' || selector[0] == '-') {
+		int offset = 0;
+
+		try {
+			offset = std::stoi(selector);
+		} catch (const std::exception&) {
+			return nullptr;
+		}
+
+		auto& monitors = State::monitorState()->monitors();
+		if (monitors.empty()) return nullptr;
+
+		auto current = this->monitor().lock();
+		auto iter = std::ranges::find(monitors, current);
+		if (iter == monitors.end()) return nullptr;
+
+		auto count = static_cast<int>(monitors.size());
+		auto index = ((static_cast<int>(iter - monitors.begin()) + offset) % count + count) % count;
+
+		return monitors[index];
+	}
+
+	return State::monitorState()->query().selector(selector).run();
 }
 
 bool Hy3Layout::shiftMonitor(Hy3Node& node, ShiftDirection direction, bool follow) {
