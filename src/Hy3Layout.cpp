@@ -276,9 +276,15 @@ Hy3Node* Hy3Layout::insertNode(UP<Hy3Node> node_up, std::optional<Vector2D> foca
 			if (space) wa_box = space->workArea();
 		}
 
-		auto rootUp = makeUnique<Hy3RootNode>(this);
-		rootUp->self = WP<Hy3Node>(rootUp);
-		this->root = std::move(rootUp);
+		// getWorkspaceRootGroup() returns null both when there is no root and
+		// when the root exists but is empty, so reaching here does not mean a
+		// root has to be built. Replacing a live one discards it - along with
+		// anything hanging off it - to put back an equivalent.
+		if (!this->root) {
+			auto rootUp = makeUnique<Hy3RootNode>(this);
+			rootUp->self = WP<Hy3Node>(rootUp);
+			this->root = std::move(rootUp);
+		}
 
 		UP<Hy3Node> rootGroup;
 		if (*tab_first_window) {
