@@ -614,7 +614,18 @@ Hy3TabGroup::Hy3TabGroup(Hy3Node& node) {
 	this->updateWithGroup(node, true);
 	this->pos->warp();
 	this->size->warp();
-	this->bar.monitor_id = node.layout()->workspace()->m_monitor->m_id;
+
+	// Three nullable hops. layout() returns null for a detached subtree and
+	// workspace() for a layout with no space yet, both of which happen while
+	// nodes are being moved between workspaces - which is exactly when tab
+	// groups get built. tick() has guarded this since d69eadc; the constructor
+	// never did. monitor_id keeps its MONITOR_INVALID default, and tick()
+	// corrects it on the first pass that has a monitor.
+	auto* layout = node.layout();
+	auto workspace = layout != nullptr ? layout->workspace() : nullptr;
+	if (workspace && workspace->m_monitor) {
+		this->bar.monitor_id = workspace->m_monitor->m_id;
+	}
 }
 
 void Hy3TabGroup::updateWithGroup(Hy3Node& node, bool warp) {
