@@ -710,7 +710,11 @@ static bool shouldCollapseNode(Hy3Node* node, CollapsePolicy policy) {
 
 	if (child->is_group()) {
 		auto& cgroup = child->as_group();
-		if (group.isSplit() && cgroup.isSplit()) return true;
+		// a split under a *tab* parent is load-bearing - collapsing it merges
+		// the child's windows into the tab group as separate tabs.
+		if (group.isSplit() && cgroup.isSplit()
+		    && (node->is_root() || node->parent->as_group().isSplit()))
+			return true;
 		if (cgroup.children.size() == 1 && group.isTab() && cgroup.isTab()) return true;
 	}
 
@@ -818,7 +822,13 @@ void Hy3Node::insertAndMerge(UP<Hy3Node> child, CollapsePolicy policy) {
 
 void Hy3Node::wrap(Hy3GroupLayout layout, GroupEphemeralityOption ephemeral, bool change) {
 	auto& parentGroup = this->parent->as_group();
-	if (change && !this->parent->is_root() && parentGroup.children.size() == 1) {
+	// only a *split* only-child parent can be relayouted in place. doing it to a
+	// tab parent turns the tab group itself into the requested layout instead of
+	// wrapping the child, so makegroup on the sole child of a tab group looked
+	// like a no-op.
+	if (change && !this->parent->is_root() && parentGroup.children.size() == 1
+	    && parentGroup.isSplit())
+	{
 		parentGroup.setLayout(layout);
 		parentGroup.setEphemeral(ephemeral);
 		this->layout()->recalcGeometry();
