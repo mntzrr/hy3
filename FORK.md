@@ -52,9 +52,10 @@ Fork commits are prefixed `fork:`. To minimise conflicts, changes follow these r
 - extra parameters added to upstream signatures are trailing and defaulted, so upstream call
   sites are untouched
 
-Before a rebase, check **both** PR tables below — the backports, which upstream merging makes
-disappear cleanly, and the overlapping PRs, which upstream merging makes conflict. After a
-rebase, the checks worth re-running are listed under "Verifying".
+Before a rebase, check the three tables below. They behave differently on one: the backports
+disappear cleanly once upstream merges them, the overlapping PRs conflict once upstream merges
+them, and the fixes to upstream bugs are carried forever because they were never reported.
+After a rebase, the checks worth re-running are listed under "Verifying".
 
 ## Features
 
@@ -186,6 +187,52 @@ Drop the fork's `shiftMonitor` wrapper only once upstream's own honours `follow 
 Its warp argument is a fair point the fork has not answered. With `input:follow_mouse` on,
 moving a window across a monitor edge without warping leaves the pointer behind, so the
 next keybind acts on a different window.
+
+## Fixes to upstream bugs, carried here
+
+Bugs in upstream code, found and fixed in this fork. **Deliberately not reported upstream**,
+so nothing will ever make them disappear on rebase — unlike the backports above, which drop
+out once upstream merges them. Each is a permanent edit inside an upstream function and will
+conflict whenever upstream touches the same code. On a conflict the fork's side is the one
+to keep, unless upstream has independently fixed the same thing.
+
+They are listed here because `git log` is the only other record: a future conflict in
+`focusMonitor` or `insertNode` gives no clue whether that hunk is a fork feature, a backport
+upstream has since merged, or one of these.
+
+The hashes below are from before the first rebase and every one of them changes on each
+rebase. The subject line is the stable key — `git log --grep "hit test tab bars"` finds the
+commit whatever its hash has become.
+
+| Commit | Fixes | Lives in |
+| --- | --- | --- |
+| `8761c3b` | `windows()` dereferenced a target whose window was gone. `as_target()` throws on an expired WP, and `shutdown()` walks this from `PLUGIN_EXIT`, where an escaping exception is `std::terminate` | `Hy3Node::windows()` |
+| `97273d2` | `insertNode` destroys the node on its three failure paths; the caller kept using it — use after free | `Hy3Layout::insertNode` (return type), `moveNodeToWorkspace` |
+| `b27d2b0` | a destination not running hy3 fell back to inserting into the *origin's* tree while the windows moved elsewhere | `moveNodeToWorkspace` |
+| `ed0d775` | `focusMonitor` warped with `warp` hardcoded true, and its result was then focused a second time by `shiftFocus` | `focusMonitor`, `shiftOrGetFocus`, `shiftFocus`, `moveFocus` |
+| `bf2b394` | the hyprsplit `dlsym` result was cached in a static: dangling after a hyprsplit unload, and a cached miss when hy3 loaded first | `operationWorkspaceForName` |
+| `7de8855` | three unguarded nullable hops in the tab group constructor; `tick()` has been guarded since `d69eadc` | `Hy3TabGroup::Hy3TabGroup` |
+| `ec98a3b` | a shader that fails to compile threw from inside the render pass, once per frame — a throwing function-local static is retried | `Hy3Shaders::instance`, `Hy3Render::renderTab` |
+| `d1cfb4c` | tab bar hit testing checked its top bound against `logicalBox` and the other three against `visualBox` | `findTabBarAt` |
+| `7a8fab0` | `tab_focused_node` was uninitialised and `goto hastab` jumps every assignment to it | `Hy3Layout::focusTab` |
+| `617a457` | an empty-but-live root was destroyed and rebuilt, because `getWorkspaceRootGroup` returns null for both "no root" and "empty root" | `Hy3Layout::insertNode` |
+| `46913ef` | `hy3:togglefocuslayer` was the only warping dispatcher that ignored `cursor:no_warps` | `dispatch_togglefocuslayer` |
+| `696fc23` | a `hy3_log` call with printf conversions into a `std::format` sink, a doubled condition, a doubly-registered animation callback, a header/definition parameter name mismatch | `dispatch_focustab`, `warpCursor`, `Hy3TabBarEntry`, `TabGroup.hpp` |
+
+Three of these are worth re-checking against upstream before each rebase, because they are the
+ones upstream is most likely to fix independently and in a different way: `97273d2`
+(`insertNode`'s ownership contract), `ed0d775` (the warp threading, which #311 also touches —
+see above), and `ec98a3b` (shader lifetime).
+
+Two findings from the same review were deliberately **not** acted on, and should stay that way:
+
+- `debugNodes` returns the node tree through `SDispatchResult::error`, which looks like abuse
+  of the error channel. It is the only channel that works — `hy3_log` output does not reach
+  the instance log at any level, see `AGENTS.md`. "Fixing" it would make `hy3:debugnodes`
+  print nothing.
+- `moveNodeToWorkspace` calls `updateTreeTabBars(*node)` and `node->updateTabBarRecursive()`
+  back to back, which reads as duplicated work. It is not: the first walks descendants, the
+  second ancestors.
 
 ## Verifying
 
