@@ -6,10 +6,15 @@ fork adds, how changes are kept conflict-minimal, and how to install it with hyp
 
 ## Ground rules
 
-- **No AI/assistant attribution in commits.** No `Co-Authored-By`, no `Assisted-by:` trailer,
-  no "generated with …" footer. AI assistance is accepted — naming the tool in the history is
-  not, because it turns `git log` into permanent advertising for one vendor or another and
-  tells a future reader nothing about the change. See `CONTRIBUTING.md`.
+- **No AI/assistant attribution in commits.** No `Co-Authored-By` naming an assistant, no
+  `Assisted-by:` trailer, no "generated with …" footer, no mention in the subject or body. AI
+  assistance is accepted — naming the tool in the history is not, because it turns `git log`
+  into permanent advertising for one vendor or another and tells a future reader nothing about
+  the change. See `CONTRIBUTING.md`.
+  **Enforced by `.githooks/commit-msg`**; enable it with `git config core.hooksPath .githooks`.
+  Assume your own defaults are wrong here: this rule was in context and still broken three
+  times in one session, which is why the hook exists. A `Co-Authored-By:` naming a *person* is
+  fine, and `--no-verify` is the way past for a replayed upstream commit.
 - Prefix fork commits `fork:` so the series is identifiable across rebases.
 - **Never push unless explicitly told to.** The remote is the user's own fork.
 - The user's Hyprland config is at `~/.config/hypr` (note: `hypr`, not `hyprland`), and it is

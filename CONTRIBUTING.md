@@ -28,6 +28,25 @@ This policy governs commits authored in this fork. Commits inherited from upstre
 original trailers — rebasing onto `upstream/master` must not rewrite upstream history, and
 upstream's own conventions are upstream's business.
 
+### Enforcing it
+
+`.githooks/commit-msg` rejects assistant attribution. Hooks are not cloned, so enable it per
+checkout:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+It exists because writing the rule down twice was not enough: three commits carrying the
+trailer reached the remote in a single session, added by an assistant whose own defaults
+instruct it to. A convention that competes with a tool's built-in behaviour needs something
+that fails the commit.
+
+It checks the message git will actually keep — comments and anything below a `-v` scissors line
+are ignored — and it does not object to a `Co-Authored-By:` naming a person. `--no-verify`
+bypasses it, which is the intended route for an upstream commit being replayed through a
+conflict, and for a commit that has to quote the policy itself.
+
 ## Commits
 
 - Prefix fork-only commits `fork:` so the series stays identifiable across rebases onto

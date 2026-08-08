@@ -1,0 +1,78 @@
+#!/usr/bin/env sh
+
+# Reject assistant attribution in commit messages.
+#
+# CONTRIBUTING.md accepts AI-assisted work and forbids naming the tool in the
+# history: no `Co-Authored-By:` trailer for an assistant, no `Assisted-by:`
+# line, no "generated with …" footer, no mention in the subject or body.
+#
+# This exists because the rule is written down in two files and was still broken
+# three times in one session - by an assistant whose own defaults tell it to add
+# the trailer. A convention that competes with a tool's built-in behaviour needs
+# something that fails the commit, not something that asks nicely.
+#
+# Install (hooks are not cloned, so this is per checkout):
+#
+#   git config core.hooksPath .githooks
+#
+# Deliberately NOT checked:
+#
+#   - `Co-Authored-By:` naming a person. The rule is about assistants, not about
+#     co-authorship; a human collaborator belongs in the trailer.
+#   - anything during a rebase of upstream commits. CONTRIBUTING.md is explicit
+#     that inherited history keeps its own trailers, and rewriting upstream's
+#     conventions is not this fork's business. commit-msg does not run when
+#     rebase replays a commit cleanly; if a conflict makes it run, `--no-verify`
+#     is the way past, and the message below says so.
+#
+# Escape hatch: `git commit --no-verify`. Left deliberately, for the upstream
+# case above and for a commit that has to quote the policy it is describing.
+
+set -u
+
+MSG_FILE=${1:?commit-msg hook called without a message file}
+
+# What git will actually keep: comments go, and so does everything below a
+# scissors line. Checking the raw file would fire on the commented-out diff that
+# `git commit -v` appends, which routinely contains this very hook.
+CLEANED=$(
+	sed -e '/^# \{0,\}-\{8,\} >8 -\{8,\}/,$d' -e '/^#/d' "$MSG_FILE"
+)
+
+# Vendor names, matched as words so "gpt" cannot hit inside an identifier.
+VENDORS='claude|anthropic|copilot|chatgpt|openai|gpt-[0-9]|gemini|cursor|codeium|windsurf|devin|aider|tabnine|codex'
+
+fail() {
+	printf '\n commit rejected: %s\n\n' "$1" >&2
+	printf '   %s\n\n' "$2" >&2
+	cat >&2 <<'EOF'
+ CONTRIBUTING.md: AI-assisted work is accepted, naming the tool is not.
+ A commit log is a poor place for vendor names - write what changed and why.
+
+ If this is an upstream commit being replayed, or a commit that has to quote
+ the policy itself, bypass with:
+
+   git commit --no-verify
+EOF
+	exit 1
+}
+
+# 1. Co-Authored-By naming an assistant. A human co-author is fine.
+offender=$(printf '%s\n' "$CLEANED" | grep -iE '^[[:space:]]*co-authored-by[[:space:]]*:' | grep -iE "$VENDORS" | head -1)
+[ -n "$offender" ] && fail "Co-Authored-By trailer names an assistant" "$offender"
+
+# 2. Assisted-by, unconditionally - the trailer exists only to name a tool.
+offender=$(printf '%s\n' "$CLEANED" | grep -iE '^[[:space:]]*assisted-by[[:space:]]*:' | head -1)
+[ -n "$offender" ] && fail "Assisted-by trailer" "$offender"
+
+# 3. "generated with …" footers, however they are dressed up.
+offender=$(printf '%s\n' "$CLEANED" | grep -iE 'generated (with|by)[[:space:]]' | head -1)
+[ -n "$offender" ] && fail "'generated with' footer" "$offender"
+
+# 4. A vendor named anywhere else in the subject or body. This is the one that
+#    can misfire - on a commit *about* the policy - which is what --no-verify is
+#    for. Reporting the line makes a false positive obvious at a glance.
+offender=$(printf '%s\n' "$CLEANED" | grep -inE "$VENDORS" | head -1)
+[ -n "$offender" ] && fail "assistant named in the message" "$offender"
+
+exit 0
