@@ -242,6 +242,7 @@ commit whatever its hash has become.
 | *guard sweep* | every remaining unguarded `as_target()`/`as_window()`, `8761c3b` having covered only `windows()` — **upstream #332**. See below | `try_target()`/`try_window()`, ten call sites |
 | *layout() sweep* | `Hy3Node::layout()` is documented nullable and was dereferenced unguarded at nine sites, one of them inside `recalcSizePosRecursive` — the frame **#241** crashes in. See below | `recalcLayoutGeometry()`/`layoutWorkspace()`, nine call sites |
 | *makegroup toggle* | `makegroup … toggle` was a permanent no-op on a workspace holding one window — **upstream #192**. See below | `Hy3Layout::makeGroupOnWorkspace` |
+| *tab font size* | a size written into `tabs:text_font` was parsed and then overwritten by `text_height`, so the standard way to write a pango description silently did nothing — **upstream #275**, no PR | `Hy3TabBarEntry::renderText` |
 
 Four of these are worth re-checking against upstream before each rebase, because they are the
 ones upstream is most likely to fix independently and in a different way: `97273d2`
@@ -329,6 +330,25 @@ group with no bar and no inset looks identical either way, so the no-op stays.
 
 The reporter also saw crashes a few seconds after toggling. Nothing like that reproduced here
 over repeated toggle cycles, and no claim is made about it.
+
+### The tab font size
+
+`tabs:text_font` is a pango font description, and the standard way to write one carries the
+size: `Sans 20`. `renderText` parsed it and then called `pango_font_description_set_size` with
+`tabs:text_height` regardless, so the size half of the description was always discarded —
+upstream **#275**, no PR.
+
+`text_height` now applies only when the description carries no size of its own, which is the
+default (`Sans`), so nothing changes for a config that never wrote one. When it does, the
+parsed size is kept and only scaled for the monitor: the texture is rendered at device scale
+while both sizes are logical, and `set_absolute_size`/`set_size` are separate calls because a
+description may carry either kind. Verified by pixel-comparing three tab bar screenshots out
+of the nested instance — `Sans 20` with `text_height = 8` is byte-identical to `Sans` with
+`text_height = 20`, and both differ from the default.
+
+The bar does not grow to fit: `tabs:height` is what sizes it, and a font larger than it fits
+overflows, exactly as it does when `text_height` is raised past the bar. That is the existing
+behaviour of the knob this restores, not a new one.
 
 The suite covers the fullscreen cross-monitor path under **#241** — five assertions, of which
 "origin reclaimed the space" is the load-bearing one: it says the moved node really left the

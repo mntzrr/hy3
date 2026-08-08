@@ -1,4 +1,5 @@
 #include "TabGroup.hpp"
+#include <cmath>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -285,7 +286,24 @@ void Hy3TabBarEntry::renderText(float scale, CBox& box, float opacity) {
 		pango_layout_set_text(layout, this->window_title.c_str(), -1);
 
 		auto* font_desc = pango_font_description_from_string((*text_font).c_str());
-		pango_font_description_set_size(font_desc, *text_height * scale * PANGO_SCALE);
+
+		// fork: text_height applies only when text_font carries no size of its
+		// own. Upstream overwrote the parsed size unconditionally, so the size
+		// half of a pango description - the standard way to write one - was
+		// silently discarded (upstream #275). Either way the size is a logical
+		// one and the texture is rendered at device scale, so it is scaled here.
+		if (pango_font_description_get_set_fields(font_desc) & PANGO_FONT_MASK_SIZE) {
+			auto size = pango_font_description_get_size(font_desc) * scale;
+
+			if (pango_font_description_get_size_is_absolute(font_desc)) {
+				pango_font_description_set_absolute_size(font_desc, size);
+			} else {
+				pango_font_description_set_size(font_desc, std::lround(size));
+			}
+		} else {
+			pango_font_description_set_size(font_desc, *text_height * scale * PANGO_SCALE);
+		}
+
 		pango_layout_set_font_description(layout, font_desc);
 		pango_font_description_free(font_desc);
 
