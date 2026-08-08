@@ -169,6 +169,7 @@ series keeps working**. Check each against `upstream/master` before a rebase.
 | [#296](https://github.com/outfoxxed/hy3/pull/296) | windows escaping tab groups on `hy3:movewindow`; `wrap`/collapse ignoring tab parents | no |
 | [#298](https://github.com/outfoxxed/hy3/pull/298) | tab highlight not refreshed on monitor focus change | yes — `State::monitorState()->monitors()`, and teardown wired into `PLUGIN_EXIT` |
 | [#328](https://github.com/outfoxxed/hy3/pull/328) | `<lua.h>` located by luck rather than by cmake — the build only works where the distribution installs it directly in `/usr/include` | yes — include dirs only, see below |
+| [#327](https://github.com/outfoxxed/hy3/pull/327) | *not a fix* — `hy3_grouped`/`hy3_tabbed` window tags, so windowrules can react to hy3's own grouping state (answers **#294**). Gated behind `plugin:hy3:tag_windows`, off by default | yes — one `as_window()` swapped for `try_window()`, see below |
 
 **#328 is taken headers-only.** `src/dispatchers.cpp` includes hyprland's lua binding headers,
 `hyprland.pc` says nothing about lua, and Arch happens to put `lua.h` in `/usr/include`; a
@@ -178,6 +179,26 @@ taken: hy3 resolves lua symbols from hyprland at load time — that is why it ha
 with no lua on the command line — and a `DT_NEEDED` on a liblua that need not be the one
 hyprland itself uses is a new failure mode for nothing. `readelf -d build/libhy3.so` should
 list no lua after a rebase resolves a conflict here.
+
+**#327 is the one backport that is not a fix.** It is a feature, taken because it is gated,
+off by default, and mergeable upstream — so it drops out on rebase like the rest rather than
+becoming a permanent carry. It answers **#294** without a dedicated match property: a rule
+matches `tag = "hy3_tabbed"`, which is what "hide hyprbars on tabbed windows" needs.
+
+Three things about it, all of which a rebase conflict here has to preserve:
+
+- **`try_window()`, not `as_window()`.** The PR calls the throwing accessor inside
+  `syncHy3Tags`, whose callers are the four tree mutation primitives — reached from wayland
+  callbacks. Its own catch-all would stop that terminating the compositor, but there is
+  nothing worth catching: a window that is gone has no tags to set. This is exactly a guard
+  sweep site, so it uses the sweep's accessor. Two calls became one lookup while there.
+- **Its `setLayout` hunk conflicts with #302's.** The PR adds `auto was_tab = isTab();` next to
+  the root-layout guard that the #302 backport rewrote to bite in both directions. Keep both:
+  the fork's two-way guard, then the PR's line.
+- **Its `recalcSizePosRecursive` and `focus()` hunks conflict with the guard and `layout()`
+  sweeps.** Both add a `was_hidden` capture where the fork had already replaced the unguarded
+  `as_window()`/`as_target()` with a null-checked local. The hidden→visible sync now sits
+  inside the fork's `if (auto window = target->window())`, which is where it belongs anyway.
 
 Two interactions worth knowing:
 
@@ -432,6 +453,14 @@ floating one sits still — and they need *two* tiled windows to be observable a
 the bad move is a no-op and the assertion passes against a build carrying the bug. The other
 three are the feature and the fallthrough hop.
 
+The #327 block is seven assertions and none of them is a regression test - the code is new,
+so there is no pre-fix build to fail against. What they pin down is the contract: off is a
+true no-op, the workspace's implicit top-level container does not count as "grouped",
+untabbing drops `hy3_tabbed` while keeping `hy3_grouped`, and dissolving the group clears
+both. The "off" phase has to run first and leave the tree flat again - tags are synced from
+tree mutations, so turning the flag on does not retroactively tag a tree that is already
+built, and an "on" phase that inherited tags it never set would pass for the wrong reason.
+
 The tree-edit block is two regression tests and three checks around them, verified the same
 way: `makegroup` and `changegroup` both tab the windows behind the floating one against a
 build with the guard disabled, and the geometry oracle catches it as a bar inset. **`expand`
@@ -461,7 +490,7 @@ plugin that owns every window is disruptive at best, and has crashed the composi
 
 ```sh
 test/nested.sh start 2   # nested Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 78 assertions covering everything below
+test/smoke.sh            # 85 assertions covering everything below
 test/nested.sh stop
 ```
 

@@ -707,6 +707,38 @@ check_eventually "with tiled focus it still tabs"        "true" below "$P" "$TOP
 check "instance survived the tree edits"                 "yes" "$(alive)"
 
 echo
+echo "== #327 window tags =="
+# Backported feature, gated behind plugin:hy3:tag_windows. Tags are synced from
+# the tree mutation primitives, so turning the flag on does not retroactively
+# tag an existing tree - the "off" phase has to come first and leave the tree
+# flat again, or the "on" phase inherits tags it never set.
+tags_of() { clients | jq -r --arg a "$1" '.[]|select(.address==$a)|.tags|sort|join(",")'; }
+
+pin_mon0
+cleanup_windows
+spawn t_l || { echo "could not spawn t_l" >&2; exit 1; }
+spawn t_m || { echo "could not spawn t_m" >&2; exit 1; }
+L=$(addr_of t_l); M=$(addr_of t_m)
+[ -n "$L" ] && [ -n "$M" ] || { echo "could not spawn the tag windows" >&2; exit 1; }
+
+setflag tag_windows false
+focus "$M"
+dispatch "hl.plugin.hy3.make_group('tab')" 0.5
+check "off: tagging is a true no-op"                     "" "$(tags_of "$M")"
+dispatch "hl.plugin.hy3.make_group('tab',{toggle=true})" 0.5
+
+setflag tag_windows true
+check "a plain window carries no tags"                   "" "$(tags_of "$M")"
+dispatch "hl.plugin.hy3.make_group('tab')" 0.5
+check_eventually "a tabbed group tags both"              "hy3_grouped,hy3_tabbed" tags_of "$M"
+check "the window outside it is untagged"                "" "$(tags_of "$L")"
+dispatch "hl.plugin.hy3.change_group('h')" 0.5
+check_eventually "untabbing drops only hy3_tabbed"       "hy3_grouped" tags_of "$M"
+dispatch "hl.plugin.hy3.make_group('h',{toggle=true})" 0.5
+check_eventually "dissolving the group clears both"      "" tags_of "$M"
+check "instance survived the tag syncing"                "yes" "$(alive)"
+
+echo
 echo "== teardown =="
 cleanup_windows
 check "instance survived the run"              "yes" "$(alive)"

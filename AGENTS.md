@@ -60,7 +60,7 @@ Use the throwaway instance instead:
 
 ```sh
 test/nested.sh start 2   # throwaway Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 78 assertions over the fork's behaviour
+test/smoke.sh            # 85 assertions over the fork's behaviour
 test/nested.sh stop
 ```
 
