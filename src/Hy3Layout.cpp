@@ -666,6 +666,24 @@ void Hy3Layout::makeGroupOnWorkspace(
 		if (group.children.size() == 1 && group.layout == layout) {
 			auto* collapsed = parent->collapseParents(CollapsePolicy::SingleNodeGroups);
 
+			// fork: a group hanging directly off the root whose only child is a
+			// window is never collapsed. shouldCollapseNode refuses it outright,
+			// before it ever looks at the policy, so that a workspace always
+			// keeps a group as its top level container.
+			//
+			// collapseParents then hands the group straight back, and toggling
+			// off is a no-op: on a workspace holding a single window the tab bar
+			// and the space it insets stay put, and no number of further presses
+			// changes anything. Upstream #192.
+			//
+			// The container has to survive, but its layout does not - dropping it
+			// back to the split it came from is what toggling off means for it,
+			// and leaves exactly the picture collapsing would have.
+			if (collapsed == parent && parent->is_root_group() && group.isTab()) {
+				this->untabGroupOn(*node);
+				return;
+			}
+
 			if (collapsed && !collapsed->is_root()) {
 				collapsed->parent->updateTabBarRecursive();
 				this->recalcGeometry();

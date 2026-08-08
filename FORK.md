@@ -183,23 +183,23 @@ When it merges, resolve by **keeping the fork's gate around upstream's call** �
 `if (monitor_fallthrough && shiftMonitor(node, direction, true, warp))`. Taking it verbatim
 would break the invariant at the top of this file: off by default, identical to upstream.
 Drop the fork's `shiftMonitor` wrapper only once upstream's own honours `follow = false`.
-
 Its warp argument is a fair point the fork has not answered. With `input:follow_mouse` on,
 moving a window across a monitor edge without warping leaves the pointer behind, so the
 next keybind acts on a different window.
 
 ## Fixes to upstream bugs, carried here
 
-Bugs in upstream code, found and fixed in this fork. All but one are **deliberately not
-reported upstream**, so nothing will ever make them disappear on rebase — unlike the backports
-above, which drop out once upstream merges them. Each is a permanent edit inside an upstream
-function and will conflict whenever upstream touches the same code. On a conflict the fork's
-side is the one to keep, unless upstream has independently fixed the same thing.
+Bugs in upstream code, found and fixed in this fork. Most were **never reported upstream**, so
+nothing will ever make them disappear on rebase — unlike the backports above, which drop out
+once upstream merges them. Each is a permanent edit inside an upstream function and will
+conflict whenever upstream touches the same code. On a conflict the fork's side is the one to
+keep, unless upstream has independently fixed the same thing.
 
-The exception is the guard sweep, which fixes an upstream issue that *is* reported (#332).
-No PR exists for it, so it does not drop out on rebase either — but upstream is likely to fix
-it eventually, and probably differently (see the note on #329 above, which is the other
-proposed shape of the same fix). Check it before each rebase.
+Two fix issues that *are* reported: the guard sweep is **#332** and the makegroup toggle no-op
+is **#192**. Neither has a PR, so neither drops out on rebase either — but upstream may fix
+them eventually, and probably differently (see the note on #329 above, which is the other
+proposed shape of the guard sweep). Check both before each rebase; the rest only need checking
+if upstream touches the same function.
 
 They are listed here because `git log` is the only other record: a future conflict in
 `focusMonitor` or `insertNode` gives no clue whether that hunk is a fork feature, a backport
@@ -225,6 +225,7 @@ commit whatever its hash has become.
 | `696fc23` | a `hy3_log` call with printf conversions into a `std::format` sink, a doubled condition, a doubly-registered animation callback, a header/definition parameter name mismatch | `dispatch_focustab`, `warpCursor`, `Hy3TabBarEntry`, `TabGroup.hpp` |
 | *guard sweep* | every remaining unguarded `as_target()`/`as_window()`, `8761c3b` having covered only `windows()` — **upstream #332**. See below | `try_target()`/`try_window()`, ten call sites |
 | *layout() sweep* | `Hy3Node::layout()` is documented nullable and was dereferenced unguarded at nine sites, one of them inside `recalcSizePosRecursive` — the frame **#241** crashes in. See below | `recalcLayoutGeometry()`/`layoutWorkspace()`, nine call sites |
+| *makegroup toggle* | `makegroup … toggle` was a permanent no-op on a workspace holding one window — **upstream #192**. See below | `Hy3Layout::makeGroupOnWorkspace` |
 
 Four of these are worth re-checking against upstream before each rebase, because they are the
 ones upstream is most likely to fix independently and in a different way: `97273d2`
@@ -288,6 +289,31 @@ member functions, so the workspace checks are written `::valid(ws)`. And `getWor
 is only called when there is a workspace to ask about — it takes `PHLWORKSPACE` by value and
 nothing here establishes that it tolerates a null one.
 
+### The makegroup toggle no-op
+
+`hy3:makegroup tab toggle` on a workspace holding a single window created the group and then
+would not take it away again — the tab bar and the space it insets stayed, and no number of
+further presses changed anything. Upstream **#192**, open since April 2025, no PR.
+
+The toggle-off path asks `collapseParents(SingleNodeGroups)` to dissolve the group. That
+never happens here, and not because of the policy: `shouldCollapseNode` refuses a group
+hanging directly off the root whose only child is a window (`is_root_group() && !child->is_group()`)
+before it ever looks at one, so that a workspace always keeps a group as its top level
+container. `collapseParents` hands the group straight back, the caller sees a return it treats
+as success, and nothing happened.
+
+The container has to survive, but its layout does not. The refused case is now recognised —
+`collapsed == parent`, which is exactly what the non-collapsing branch returns — and answered
+with `untabGroupOn()`, dropping the group to `previous_nontab_layout` (`SplitH` by default,
+so it is safe on a group that was created tabbed rather than switched). The tab bar goes, the
+inset goes with it, and the workspace keeps its container.
+
+Only the tab case is worth acting on: `makegroup h toggle` hits the same refusal, but a split
+group with no bar and no inset looks identical either way, so the no-op stays.
+
+The reporter also saw crashes a few seconds after toggling. Nothing like that reproduced here
+over repeated toggle cycles, and no claim is made about it.
+
 The suite covers the fullscreen cross-monitor path under **#241** — five assertions, of which
 "origin reclaimed the space" is the load-bearing one: it says the moved node really left the
 origin tree rather than being stranded there while its window went elsewhere, which is exactly
@@ -331,7 +357,7 @@ plugin that owns every window is disruptive at best, and has crashed the composi
 
 ```sh
 test/nested.sh start 2   # nested Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 55 assertions covering everything below
+test/smoke.sh            # 58 assertions covering everything below
 test/nested.sh stop
 ```
 
@@ -355,7 +381,8 @@ Three changes, verified by injecting the state directly rather than waiting for 
 
 - #296 spawns its own two windows after a `cleanup_windows` instead of inheriting `t_a`, so it
   is no longer where unrelated earlier mistakes surface. Two, not one: `makegroup` on a
-  single-client workspace is its own upstream bug (#192).
+  single-client workspace was its own upstream bug (#192, since fixed here — the block has
+  its own section now, and #296 stays on two windows so the two are tested separately).
 - `narrower_than` checks floating state first and says so, because "is it narrower" is not a
   meaningful question about a window whose size is fixed.
 - The `togglefloating` block asserts that `t_a` starts on the scratchpad, so a parity shift

@@ -407,14 +407,21 @@ wider_than() { # wider_than <addr> <baseline>
 	if [ -n "$w" ] && [ "$w" -gt "$2" ] 2>/dev/null; then echo true
 	else echo "false (width ${w:-none} vs baseline $2)"; fi
 }
+# a tab bar pushes its children down, so a larger y means a bar is present
+below() { # below <addr> <baseline>
+	local t
+	t=$(top_of "$1")
+	if [ -n "$t" ] && [ "$t" -gt "$2" ] 2>/dev/null; then echo true
+	else echo "false (top ${t:-none} vs baseline $2)"; fi
+}
 
 # Fresh windows, not the ones the rest of the suite has been passing around.
 # This block used to measure t_a, forty-odd operations after it was spawned,
 # which made it the place where any earlier mistake surfaced - as a geometry
 # comparison that named neither the mistake nor the section it came from.
 #
-# Two windows, not one: makegroup on a workspace holding a single client is its
-# own upstream bug (#192), and this assertion is not about that.
+# Two windows, not one: makegroup on a workspace holding a single client was
+# its own upstream bug (#192, fixed below), and this assertion is not about it.
 pin_mon0
 cleanup_windows
 spawn t_v || { echo "could not spawn t_v" >&2; exit 1; }
@@ -521,6 +528,29 @@ check "#241 instance survived the move"                    "yes" "$(alive)"
 check_eventually "#241 origin reclaimed the space"         "true" wider_than "$G" "$FULL_WIDTH"
 dispatch "hl.dsp.window.fullscreen()" 0.6
 check_eventually "#241 unfullscreens tiled on the target"  "$M1" where "$F"
+
+# #192: makegroup toggle on a workspace holding a single window. The collapse
+# itself worked - the tab bar went away - but collapseParents returns the root
+# whenever the group it collapsed hung directly off it, which is always the
+# case here, and the geometry recalc was gated on that return *not* being the
+# root. So the window kept the size the tab bar had inset it to: bar gone, gap
+# left behind, until an unrelated recalc (a workspace switch) reclaimed it.
+#
+# Unlike the two blocks above, "toggling off reclaims the gap" really is a
+# regression test - verified failing against a build with the branch disabled.
+# The other two are sanity checks around it.
+pin_mon0
+cleanup_windows
+spawn t_s || { echo "could not spawn t_s" >&2; exit 1; }
+S=$(addr_of t_s)
+[ -n "$S" ] || { echo "could not spawn the #192 window" >&2; exit 1; }
+BARE_TOP=$(stable top_of "$S")
+
+dispatch "hl.plugin.hy3.make_group('tab',{toggle=true})" 0.5
+check_eventually "#192 the tab bar insets the sole window" "true"      below "$S" "$BARE_TOP"
+dispatch "hl.plugin.hy3.make_group('tab',{toggle=true})" 0.5
+check_eventually "#192 toggling off reclaims the gap"      "$BARE_TOP" top_of "$S"
+check "#192 instance survived the toggle"                  "yes"       "$(alive)"
 
 echo
 echo "== teardown =="
