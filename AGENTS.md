@@ -55,7 +55,7 @@ Use the throwaway instance instead:
 
 ```sh
 test/nested.sh start 2   # throwaway Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 44 assertions over the fork's behaviour
+test/smoke.sh            # 55 assertions over the fork's behaviour
 test/nested.sh stop
 ```
 
@@ -65,6 +65,38 @@ test/nested.sh stop
 compositor rather than sleeping a fixed amount — a full run is ~30s. `HY3_TEST_TERM`
 (default `alacritty`, must accept `--title`) and `HY3_TEST_TIMEOUT` (default 6s, raise it on
 a loaded machine) are the two knobs.
+
+### The nested instance is not as isolated as it looks
+
+Guarding the `hyprctl` channel is not enough, and the harness spent a long time appearing safe
+while it was not. Two things reach past the nested instance, and both are held open for the
+whole run rather than at some moment a guard could check:
+
+- **libseat.** Hyprland opens a seat even under the wayland backend, where it needs nothing
+  from one. With no seatd socket it falls back to logind, and the session it opens is whatever
+  `XDG_SESSION_ID` names — inherited from whatever ran the script. Started from a terminal
+  multiplexer that outlived its login, that is an old session *still on seat0*, the same seat
+  as the live one. The instance then tries to activate it, which would deactivate the real
+  session. It fails ("Session could not be activated in time") but holds the handle, and
+  logind re-evaluating seat0 around it is enough for the session manager to tear the real
+  session down. That is a logout with **no crash, no core, and nothing in either compositor's
+  log** — the compositor is the victim, not the cause, and its own log just stops. It cost
+  four sessions before it was found. `hypr-signal-log` names `start-hyprland` as the sender,
+  which is true and misleading: that is the watchdog doing a normal teardown.
+- **The DRM backend.** Aquamarine runs backends *together*, not as alternatives. What used to
+  keep DRM out was the seat bug above — the seat was never activated, so DRM was unusable.
+  Fix the seat and DRM succeeds instead, because the device nodes are ACL'd to the logged-in
+  user: the harness comes up owning the real screens.
+
+`nested.sh` now sets `LIBSEAT_BACKEND=noop` and `AQ_DRM_DEVICES=/dev/null`. Neither may be
+removed without the other — dropping the second while keeping the first is what puts
+`HDMI-A-1` in a nested instance's monitor list. `start()` then asserts every output is a
+`WAYLAND-*` surface and refuses to continue otherwise, because both failures are silent: the
+instance starts, the tests pass, and the only symptom is a session dying later for no
+visible reason.
+
+If a session dies during a nested run, check `loginctl list-sessions` for a second session on
+seat0 before suspecting hy3.
 
 Related traps when a build does need to reach a real session:
 

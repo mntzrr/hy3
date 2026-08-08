@@ -172,7 +172,45 @@ start() {
 	# its children, a process-group signal - can take it along. Detached, it also
 	# cannot be swept up by a cleanup that matches on the name "Hyprland", which
 	# would otherwise be indistinguishable from the host compositor.
+	# LIBSEAT_BACKEND=noop is not a tidiness flag, it is the difference between
+	# this harness being safe and it logging the user out.
+	#
+	# Hyprland opens a seat through libseat even under the wayland backend, where
+	# it needs nothing from one. With no seatd socket, libseat falls back to
+	# logind - and the session it opens is whatever XDG_SESSION_ID says, which is
+	# inherited from whatever ran this script. Run from a terminal multiplexer
+	# that outlived its login, that is an old session which is still on seat0,
+	# the same seat the live graphical session is on. The nested instance then
+	# tries to *activate* it, which would deactivate the real one:
+	#
+	#   [libseat] Seat opened with backend 'logind'
+	#   Session is not active, waiting for 5s
+	#   Session timeout reached
+	#   Session could not be activated in time
+	#
+	# It gives up on activating but holds the handle for the whole run, and
+	# logind re-evaluating seat0 around it is enough for the session manager to
+	# tear the real session down - a logout with no crash, no core, and nothing
+	# in the compositor's log, because the compositor is the victim rather than
+	# the cause. Observed four times before it was tracked down.
+	#
+	# The noop backend gives libseat nothing to open. Nothing here wants a seat:
+	# the outputs are wayland surfaces on the host and the input comes from it
+	# too. Keep this even if seatd is installed later - the point is not which
+	# backend is chosen but that no seat is taken at all.
+	#
+	# AQ_DRM_DEVICES must accompany it, and removing either one is unsafe.
+	# Aquamarine runs backends *together*, not as alternatives: it adds DRM
+	# whenever it can and the wayland backend on top. What used to stop it was
+	# the very bug above - the seat it opened was never activated, so DRM was
+	# unusable and only the nested outputs remained. Take the seat away and DRM
+	# succeeds instead, because the device nodes are ACL'd to the logged-in user:
+	# the harness comes up owning HDMI-A-1 and eDP-1, the real screens. Pointing
+	# the device list at a node that cannot be a GPU leaves the DRM backend with
+	# nothing to enumerate, so only the wayland one is left.
 	setsid env -u HYPRLAND_INSTANCE_SIGNATURE \
+		LIBSEAT_BACKEND=noop \
+		AQ_DRM_DEVICES=/dev/null \
 		HYPRLAND_NO_SD_NOTIFY=1 \
 		Hyprland -c "$CONFIG" >"$LOGFILE" 2>&1 &
 
@@ -226,6 +264,22 @@ start() {
 		i=$((i + 1))
 		sleep 0.25
 	done
+
+	# Every output must be a nested wayland surface. A physical one here means
+	# the DRM backend came up despite the env above, and the harness is now
+	# driving the user's actual screens - stop before anything is dispatched at
+	# it. The env vars are the fix; this is the check that they worked, because
+	# the failure is silent otherwise: the instance starts, the tests pass, and
+	# the only symptom is the session dying later for no visible reason.
+	local physical
+	physical=$(ctl monitors -j | jq -r '.[]|select(.name|startswith("WAYLAND-")|not)|.name' | tr '\n' ' ')
+	if [ -n "${physical% }" ]; then
+		echo "refusing to continue: nested instance opened physical output(s): ${physical% }" >&2
+		echo "the DRM backend came up - LIBSEAT_BACKEND/AQ_DRM_DEVICES are not taking effect" >&2
+		is_nested "$pid" && kill "$pid" 2>/dev/null
+		rm -f "$SIGFILE" "$PIDFILE"
+		exit 1
+	fi
 
 	ctl plugin load "$PLUGIN" >/dev/null || { echo "plugin load failed" >&2; exit 1; }
 
