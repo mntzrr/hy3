@@ -364,10 +364,11 @@ plugin {
    - `warp` - warp the mouse to the selected window, even if `general:no_cursor_warps` is true.
    - `nowarp` - does not warp the mouse to the selected window, even if `general:no_cursor_warps` is false.
  - `hy3:warpcursor` - warp the cursor to the center of the focused node
- - `hy3:movewindow, <l | u | d | r | left | down | up | right>, [once], [visible], [monitor]` - move a window left, up, down, or right
+ - `hy3:movewindow, <l | u | d | r | left | down | up | right>, [once], [visible], [monitor], [warp | nowarp]` - move a window left, up, down, or right
    - `once` - only move directly to the neighboring group, without moving into any of its subgroups
    - `visible` - only move between visible nodes, not hidden tabs
    - `monitor` - **(fork)** at the edge of the layout, move the node to the adjacent monitor instead of wrapping it into a new group. implied by `plugin:hy3:movewindow_monitor_fallthrough`.
+   - `warp` / `nowarp` - **(fork)** whether to warp the mouse along when the move crosses a monitor. defaults to `cursor:no_warps`. a move that stays inside one monitor never warps, with or without this.
  - `hy3:movetoworkspace, <workspace>, [follow, [warp | nowarp]]` - move the active node to the given workspace
    - `follow` - change focus to the given workspace when moving the selected node
    - `warp` - warp the mouse to the selected window, even if `general:no_cursor_warps` is true.
@@ -443,6 +444,7 @@ hy3.move_window("l" | "r" | "u" | "d" | "left" | "right" | "up" | "down", {
 	once = true | false,    -- default: false
 	visible = true | false, -- default: false
 	monitor = true | false, -- (fork) default: follows plugin:hy3:movewindow_monitor_fallthrough
+	warp = true | false,    -- (fork) default: follows cursor:no_warps. only read when the move crosses a monitor
 })
 
 hy3.move_to_workspace("<workspace>", {

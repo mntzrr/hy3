@@ -125,6 +125,20 @@ focus() {
 # that names a monitor and not the reason.
 pin_mon0() { dispatch "hl.dsp.focus({ monitor = '$M0_NAME' })" 0.4; }
 
+# Move a node until it lands on the given monitor. Not a fixed count: at the
+# far edge of a layout `movewindow` wraps the node into a new group instead of
+# going anywhere, so how many moves it then takes to unwind back out and reach
+# the root boundary depends on what the moves before it did. A hardcoded three
+# passed twice and failed twice on the same tree.
+move_window_until() { # move_window_until <addr> <dir> <target mon> [lua opts]
+	local i=0
+	while [ "$(where "$1")" != "$3" ]; do
+		[ "$i" -ge 8 ] && return 1
+		dispatch "hl.plugin.hy3.move_window('$2'${4:+, $4})" 0.4
+		i=$((i + 1))
+	done
+}
+
 alive() { kill -0 "$(cat "${TMPDIR:-/tmp}/hy3-nested/pid")" 2>/dev/null && echo yes || echo no; }
 
 # Composite readers, so a two-window assertion can be polled as one value.
@@ -235,6 +249,23 @@ setflag movewindow_monitor_fallthrough true
 focus "$B"
 for _ in 1 2 3; do dispatch "hl.plugin.hy3.move_window('r')" 0.4; done
 check_eventually "flag on: node crosses at the edge"      "$M1"      where "$B"
+
+# fork: the cross-monitor half of the move warps, so that with
+# input:follow_mouse the pointer is not left on the monitor the window came
+# from, where the next keybind would act on whatever it is now hovering. This
+# is the gap #311 pointed at. A move that stays inside one monitor is
+# unchanged and still never warps.
+#
+# "cursor crossed with the node" is the load-bearing one - verified failing
+# against a build with shiftMonitor's warp back to a hardcoded false. The other
+# three describe behaviour that held before it too.
+check_eventually "flag on: cursor crossed with the node"  "true"     cursor_in "$B"
+move_window_until "$B" l "$M0" "{warp=false}"
+check_eventually "nowarp: node crossed back"              "$M0"      where "$B"
+check_eventually "nowarp: cursor stayed behind"           "false"    cursor_in "$B"
+move_window_until "$B" r "$M1"
+check_eventually "flag on: node crossed the edge again"   "$M1"      where "$B"
+
 for _ in 1 2 3; do dispatch "hl.plugin.hy3.move_window('r')" 0.4; done
 check_eventually "outermost edge does not lose the node"  "$M1"      where "$B"
 
@@ -407,6 +438,7 @@ wider_than() { # wider_than <addr> <baseline>
 	if [ -n "$w" ] && [ "$w" -gt "$2" ] 2>/dev/null; then echo true
 	else echo "false (width ${w:-none} vs baseline $2)"; fi
 }
+
 # a tab bar pushes its children down, so a larger y means a bar is present
 below() { # below <addr> <baseline>
 	local t

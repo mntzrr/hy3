@@ -109,6 +109,12 @@ wrapping it into a new group. The config flag enables it globally; the `monitor`
   `shiftWindow` → `shiftNode` → `shiftOrGetFocus`, acted on in the `break_parent->is_root()`
   branch. `shiftMonitor` extracts the node, so that branch returns immediately.
 - `Hy3Layout::shiftWindow` ORs the argument with the config flag.
+- `warp` rides the same chain, and only the cross-monitor branch reads it: a move that stays
+  inside one monitor has never warped and still does not. It defaults to `!cursor:no_warps`
+  like every other dispatcher, with `warp`/`nowarp` (Lua: `{ warp = … }`) overriding per
+  invocation. Without it the pointer stays on the monitor the window came from, and with
+  `input:follow_mouse` the next keybind acts on whatever it is now hovering — which is the
+  half of #311 this fork had not answered.
 
 ### 4. `hy3:togglefloating` / `hy3.toggle_floating`
 
@@ -138,7 +144,6 @@ series keeps working**. Check each against `upstream/master` before a rebase.
 | [#331](https://github.com/outfoxxed/hy3/pull/331) | cursor warped to `m_reportedPosition`, published asynchronously and so stale | yes — extended to `focusMonitor`'s floating-window warp |
 | [#296](https://github.com/outfoxxed/hy3/pull/296) | windows escaping tab groups on `hy3:movewindow`; `wrap`/collapse ignoring tab parents | no |
 | [#298](https://github.com/outfoxxed/hy3/pull/298) | tab highlight not refreshed on monitor focus change | yes — `State::monitorState()->monitors()`, and teardown wired into `PLUGIN_EXIT` |
-
 | [#328](https://github.com/outfoxxed/hy3/pull/328) | `<lua.h>` located by luck rather than by cmake — the build only works where the distribution installs it directly in `/usr/include` | yes — include dirs only, see below |
 
 **#328 is taken headers-only.** `src/dispatchers.cpp` includes hyprland's lua binding headers,
@@ -185,8 +190,9 @@ monitor. Three differences:
 
 - it is **unconditional**; the fork gates on `plugin:hy3:movewindow_monitor_fallthrough`
   plus the per-invocation `monitor` argument
-- it passes `warp = true`, threading a new parameter through `shiftMonitor`; the fork
-  passes `false`, and `hy3:movewindow` has no warp argument at all
+- it passes `warp = true` unconditionally; the fork threads the same parameter through
+  `shiftMonitor` but defaults it to `!cursor:no_warps` and lets `hy3:movewindow … , warp` /
+  `, nowarp` override it per invocation
 - it keeps upstream's `shiftMonitor`; the fork rewrote it as a wrapper over
   `moveToMonitor()`, which is what makes `follow = false` work
 
@@ -194,9 +200,8 @@ When it merges, resolve by **keeping the fork's gate around upstream's call** �
 `if (monitor_fallthrough && shiftMonitor(node, direction, true, warp))`. Taking it verbatim
 would break the invariant at the top of this file: off by default, identical to upstream.
 Drop the fork's `shiftMonitor` wrapper only once upstream's own honours `follow = false`.
-Its warp argument is a fair point the fork has not answered. With `input:follow_mouse` on,
-moving a window across a monitor edge without warping leaves the pointer behind, so the
-next keybind acts on a different window.
+The warp threading is now the same shape on both sides, so that half should merge cleanly;
+what must survive is the gate and the `cursor:no_warps` default.
 
 ## Fixes to upstream bugs, carried here
 
@@ -206,11 +211,11 @@ once upstream merges them. Each is a permanent edit inside an upstream function 
 conflict whenever upstream touches the same code. On a conflict the fork's side is the one to
 keep, unless upstream has independently fixed the same thing.
 
-Two fix issues that *are* reported: the guard sweep is **#332** and the makegroup toggle no-op
-is **#192**. Neither has a PR, so neither drops out on rebase either — but upstream may fix
-them eventually, and probably differently (see the note on #329 above, which is the other
-proposed shape of the guard sweep). Check both before each rebase; the rest only need checking
-if upstream touches the same function.
+Three fix issues that *are* reported: the guard sweep is **#332**, the makegroup toggle no-op
+is **#192**, and `ed0d775`'s warp half is **#313**. None has a PR, so none drops out on rebase
+either — but upstream may fix them eventually, and probably differently (see the note on #329
+above, which is the other proposed shape of the guard sweep). Check those three before each
+rebase; the rest only need checking if upstream touches the same function.
 
 They are listed here because `git log` is the only other record: a future conflict in
 `focusMonitor` or `insertNode` gives no clue whether that hunk is a fork feature, a backport
@@ -225,7 +230,7 @@ commit whatever its hash has become.
 | `8761c3b` | `windows()` dereferenced a target whose window was gone. `as_target()` throws on an expired WP, and `shutdown()` walks this from `PLUGIN_EXIT`, where an escaping exception is `std::terminate` | `Hy3Node::windows()` |
 | `97273d2` | `insertNode` destroys the node on its three failure paths; the caller kept using it — use after free | `Hy3Layout::insertNode` (return type), `moveNodeToWorkspace` |
 | `b27d2b0` | a destination not running hy3 fell back to inserting into the *origin's* tree while the windows moved elsewhere | `moveNodeToWorkspace` |
-| `ed0d775` | `focusMonitor` warped with `warp` hardcoded true, and its result was then focused a second time by `shiftFocus` | `focusMonitor`, `shiftOrGetFocus`, `shiftFocus`, `moveFocus` |
+| `ed0d775` | `focusMonitor` warped with `warp` hardcoded true, and its result was then focused a second time by `shiftFocus` — the warp half is reported as **#313**, so upstream may fix it independently | `focusMonitor`, `shiftOrGetFocus`, `shiftFocus`, `moveFocus` |
 | `bf2b394` | the hyprsplit `dlsym` result was cached in a static: dangling after a hyprsplit unload, and a cached miss when hy3 loaded first | `operationWorkspaceForName` |
 | `7de8855` | three unguarded nullable hops in the tab group constructor; `tick()` has been guarded since `d69eadc` | `Hy3TabGroup::Hy3TabGroup` |
 | `ec98a3b` | a shader that fails to compile threw from inside the render pass, once per frame — a throwing function-local static is retried | `Hy3Shaders::instance`, `Hy3Render::renderTab` |
@@ -368,7 +373,7 @@ plugin that owns every window is disruptive at best, and has crashed the composi
 
 ```sh
 test/nested.sh start 2   # nested Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 58 assertions covering everything below
+test/smoke.sh            # 62 assertions covering everything below
 test/nested.sh stop
 ```
 

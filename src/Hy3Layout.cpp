@@ -828,9 +828,10 @@ void Hy3Layout::shiftNode(
     ShiftDirection direction,
     bool once,
     bool visible,
-    bool monitor_fallthrough
+    bool monitor_fallthrough,
+    bool warp
 ) {
-	this->shiftOrGetFocus(node, direction, true, once, visible, monitor_fallthrough);
+	this->shiftOrGetFocus(node, direction, true, once, visible, monitor_fallthrough, warp);
 }
 
 void Hy3Layout::shiftWindow(
@@ -838,7 +839,8 @@ void Hy3Layout::shiftWindow(
     ShiftDirection direction,
     bool once,
     bool visible,
-    bool monitor_fallthrough
+    bool monitor_fallthrough,
+    bool warp
 ) {
 	// fork: the config flag turns the fallthrough on for every movewindow, the
 	// argument turns it on for a single invocation.
@@ -848,7 +850,14 @@ void Hy3Layout::shiftWindow(
 	auto* node = this->getWorkspaceFocusedNode(workspace);
 	if (node == nullptr) return;
 
-	this->shiftNode(*node, direction, once, visible, monitor_fallthrough || *fallthrough_default);
+	this->shiftNode(
+	    *node,
+	    direction,
+	    once,
+	    visible,
+	    monitor_fallthrough || *fallthrough_default,
+	    warp
+	);
 }
 
 void Hy3Layout::shiftFocus(
@@ -1039,12 +1048,12 @@ static void refocusMonitor(PHLMONITOR monitor) {
 	Desktop::focusState()->fullWindowFocus(target_window, Desktop::FOCUS_REASON_KEYBIND);
 }
 
-bool Hy3Layout::shiftMonitor(Hy3Node& node, ShiftDirection direction, bool follow) {
+bool Hy3Layout::shiftMonitor(Hy3Node& node, ShiftDirection direction, bool follow, bool warp) {
 	return this->moveToMonitor(
 	    node.layoutWorkspace().get(),
 	    this->monitorInDirection(direction),
 	    follow,
-	    false
+	    warp
 	);
 }
 
@@ -1852,7 +1861,13 @@ Hy3Node* Hy3Layout::shiftOrGetFocus(
 			// fork: at the edge of the layout, hand the node to the adjacent
 			// monitor instead of wrapping it into a new group. shiftMonitor
 			// extracts the node, so the traversal state below is dead after this.
-			if (monitor_fallthrough && this->shiftMonitor(node, direction, true)) return nullptr;
+			//
+			// The warp matters here in a way it does not for a move inside one
+			// monitor: with input:follow_mouse the pointer is left behind on the
+			// monitor the window came from, and the next keybind acts on
+			// whatever it is now hovering instead of the window just moved.
+			if (monitor_fallthrough && this->shiftMonitor(node, direction, true, warp))
+				return nullptr;
 
 			auto new_layout =
 			    shiftIsVertical(direction) ? Hy3GroupLayout::SplitV : Hy3GroupLayout::SplitH;

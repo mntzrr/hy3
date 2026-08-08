@@ -143,17 +143,25 @@ public:
 	void toggleTabGroupOn(Hy3Node&);
 	void changeGroupToOppositeOn(Hy3Node&);
 	void changeGroupEphemeralityOn(Hy3Node&, bool ephemeral);
-	void shiftNode(Hy3Node&, ShiftDirection, bool once, bool visible, bool monitor_fallthrough = false);
+	void shiftNode(
+	    Hy3Node&,
+	    ShiftDirection,
+	    bool once,
+	    bool visible,
+	    bool monitor_fallthrough = false,
+	    bool warp = false
+	);
 	void shiftWindow(
 	    const CWorkspace* workspace,
 	    ShiftDirection,
 	    bool once,
 	    bool visible,
-	    bool monitor_fallthrough = false
+	    bool monitor_fallthrough = false,
+	    bool warp = false
 	);
 	void shiftFocus(const CWorkspace* workspace, ShiftDirection, bool visible, bool warp);
 	void toggleFocusLayer(const CWorkspace* workspace, bool warp);
-	bool shiftMonitor(Hy3Node&, ShiftDirection, bool follow);
+	bool shiftMonitor(Hy3Node&, ShiftDirection, bool follow, bool warp = false);
 	// focusMonitor focuses the target itself. Callers must not focus the
 	// returned node again - see the note in shiftOrGetFocus.
 	Hy3Node* focusMonitor(ShiftDirection, bool warp = true);

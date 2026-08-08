@@ -440,11 +440,24 @@ static SDispatchResult dispatch_warpcursor(std::string value) {
 	return warpCursor();
 }
 
-static SDispatchResult moveWindow(ShiftDirection shift, bool once, bool visible, bool monitor) {
+static SDispatchResult moveWindow(
+    ShiftDirection shift,
+    bool once,
+    bool visible,
+    bool monitor,
+    std::optional<bool> warp_override
+) {
 	auto* hy3 = hy3InstanceForAction();
 	if (!hy3) return SDispatchResult {};
 
-	hy3->shiftWindow(hy3->workspace().get(), shift, once, visible, monitor);
+	// fork: only the monitor fallthrough reads this - a move inside one monitor
+	// has never warped and still does not. cursor:no_warps is the default here
+	// as it is for every other dispatcher.
+	static const auto no_cursor_warps = CConfigValue<Config::INTEGER>("cursor:no_warps");
+
+	auto warp_cursor = warp_override.value_or(!*no_cursor_warps);
+
+	hy3->shiftWindow(hy3->workspace().get(), shift, once, visible, monitor, warp_cursor);
 	return SDispatchResult {};
 }
 
@@ -456,12 +469,15 @@ static int luaMoveWindow(lua_State* L) {
 	bool once = false;
 	bool visible = false;
 	bool monitor = false;
+	std::optional<bool> warp;
 
 	if (luaHasOptionsTable(L, 2, FN)) {
 		once = LuaInternal::tableOptBool(L, 2, "once").value_or(false);
 		visible = LuaInternal::tableOptBool(L, 2, "visible").value_or(false);
 		// fork: fall through to the adjacent monitor at the edge of the layout
 		monitor = LuaInternal::tableOptBool(L, 2, "monitor").value_or(false);
+		// fork: only read when the move actually crosses a monitor
+		warp = LuaInternal::tableOptBool(L, 2, "warp");
 	}
 
 	auto dspMoveWindow = [](lua_State* L) -> int {
@@ -469,7 +485,7 @@ static int luaMoveWindow(lua_State* L) {
 		bool once = lua_toboolean(L, lua_upvalueindex(2));
 		bool visible = lua_toboolean(L, lua_upvalueindex(3));
 		bool monitor = lua_toboolean(L, lua_upvalueindex(4));
-		moveWindow(shift, once, visible, monitor);
+		moveWindow(shift, once, visible, monitor, luaOptionalBoolFromUpvalue(L, 5));
 		return 0;
 	};
 
@@ -477,7 +493,8 @@ static int luaMoveWindow(lua_State* L) {
 	lua_pushboolean(L, once);
 	lua_pushboolean(L, visible);
 	lua_pushboolean(L, monitor);
-	lua_pushcclosure(L, dspMoveWindow, 4);
+	lua_pushinteger(L, luaOptionalBoolMode(warp));
+	lua_pushcclosure(L, dspMoveWindow, 5);
 	return 1;
 }
 
@@ -507,7 +524,17 @@ static SDispatchResult dispatch_movewindow(std::string value) {
 		i++;
 	}
 
-	return moveWindow(*shift, once, visible, monitor);
+	// fork: only read when the move actually crosses a monitor
+	std::optional<bool> warp_override;
+	if (args[i] == "nowarp") {
+		warp_override = false;
+		i++;
+	} else if (args[i] == "warp") {
+		warp_override = true;
+		i++;
+	}
+
+	return moveWindow(*shift, once, visible, monitor, warp_override);
 }
 
 static SDispatchResult moveToWorkspace(std::string workspace, bool follow, std::optional<bool> warp_override) {
