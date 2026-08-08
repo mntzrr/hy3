@@ -27,6 +27,19 @@ fork commit. After installing, confirm what actually landed:
 grep hash /var/cache/hyprpm/mntzr/hy3/state.toml   # must equal this repo's HEAD
 ```
 
+**The pin table is upstream's, and is never edited here.** It maps a hyprland commit to an
+*upstream hy3* commit, so a fork entry would be both useless — the install above passes a
+revision, which makes hyprpm ignore pins entirely — and a permanent conflict, since upstream
+appends to that table every release. Nothing about a new hyprland version calls for a change
+to `hyprpm.toml`.
+
+Do not read a successful no-revision install as proof the trap is gone. It only means no pin
+*matched*: upstream's table currently stops at 0.56.0, so on 0.56.1 or later hyprpm falls
+through to the branch head, which for a local clone is this fork's HEAD. The trap re-arms the
+moment upstream adds a pin for the hyprland you are running and a rebase brings it in — which
+is why the revision is passed regardless, and why the `state.toml` check above is worth doing
+every time.
+
 hyprpm elevates itself with `sudo`/`doas` for the parts that write under `/var/cache/hyprpm`,
 so these need a terminal that can prompt.
 
