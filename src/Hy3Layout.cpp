@@ -847,6 +847,47 @@ void Hy3Layout::shiftWindow(
 	static const auto fallthrough_default =
 	    CConfigValue<Config::INTEGER>("plugin:hy3:movewindow_monitor_fallthrough");
 
+	// fork: a floating window is not in the hy3 tree, so getWorkspaceFocusedNode
+	// hands back whatever tiled node last had focus and upstream moves *that* -
+	// a window the user is not looking at, and cannot see move if the floating
+	// one covers it (upstream #223). Never do that.
+	//
+	// movewindow_floating then moves the floating window itself, so one bind
+	// covers both layers as it does in i3 and sway (upstream #85, #226). The
+	// move is handed to hyprland's floating algorithm, which snaps the window
+	// to the work area edge in that direction - the same thing hyprland's own
+	// movewindow does, rather than a second set of semantics to learn.
+	//
+	// Once it is against that edge the monitor fallthrough takes over, exactly
+	// as it does for a node at the edge of the tree. That is also the path a
+	// floating window took before this branch existed - through the tiled
+	// node's shiftMonitor and into moveNodeToWorkspace's floating case - so
+	// with movewindow_floating off the fallthrough behaves as it always has.
+	static const auto floating_moves = CConfigValue<Config::INTEGER>("plugin:hy3:movewindow_floating");
+
+	auto current_window = Desktop::focusState()->window();
+	if (current_window != nullptr && current_window->m_isFloating) {
+		auto target = current_window->layoutTarget();
+		auto space = target != nullptr ? target->space() : nullptr;
+
+		if (*floating_moves && space != nullptr) {
+			auto before = target->position().pos();
+			space->moveTargetInDirection(target, shiftToMathDirection(direction), false);
+			if (target->position().pos() != before) return;
+		}
+
+		if (monitor_fallthrough || *fallthrough_default) {
+			this->moveToMonitor(
+			    current_window->m_workspace.get(),
+			    this->monitorInDirection(direction),
+			    true,
+			    warp
+			);
+		}
+
+		return;
+	}
+
 	auto* node = this->getWorkspaceFocusedNode(workspace);
 	if (node == nullptr) return;
 

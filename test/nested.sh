@@ -326,6 +326,7 @@ start() {
 	    plugin = { hy3 = {
 	        special_focus_trap = true,
 	        movewindow_monitor_fallthrough = true,
+	        movewindow_floating = true,
 	    } },
 	})" >/dev/null
 

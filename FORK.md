@@ -128,6 +128,30 @@ is unmounted onto a regular workspace with focus following it.
 - Like feature 1, the decision is keyed off the focused window's workspace so a visible but
   unfocused scratchpad doesn't hijack the action.
 
+### 5. `plugin:hy3:movewindow_floating` (bool, default false)
+
+With this set, `hy3:movewindow` moves the focused window when it is **floating**, so one bind
+covers both layers the way it does in i3 and sway. Upstream's dispatcher does nothing useful
+there — see the `#223` row in the fixes table below, which is the unconditional half of this
+change.
+
+- `src/Hy3Layout.cpp` — a floating branch at the top of `Hy3Layout::shiftWindow`.
+- The move is handed to hyprland's own floating algorithm through
+  `target->space()->moveTargetInDirection()`, which **snaps the window to the work area edge**
+  in that direction. That is what hyprland's own `movewindow` does for a floating window, so
+  the fork invents no second set of semantics and no step size to tune. An edge is a stop, not
+  a step: a second move in the same direction does nothing.
+- **Composes with feature 3.** Once the window is against that edge, `monitor_fallthrough`
+  hands it to the adjacent monitor, exactly as it does for a node at the edge of the tree.
+  The "did it move" test is a before/after compare of `target->position().pos()`.
+- That monitor hop is also the *only* thing a floating window did before this branch existed,
+  and only by accident: the move ran on the tiled tree, and if that happened to reach the root
+  boundary, `shiftMonitor` → `moveNodeToWorkspace` took its floating-window path and carried
+  the floating window across. Whether it happened at all depended on the shape of the tiled
+  tree, which the user is not looking at. With `movewindow_floating` off the hop still works
+  where the flag that governs it is on, but it is now decided by the floating window's own
+  position.
+
 ## Backported upstream PRs
 
 Fixes that are open upstream but touch code this fork's features sit on top of. Each is a
@@ -242,6 +266,7 @@ commit whatever its hash has become.
 | *guard sweep* | every remaining unguarded `as_target()`/`as_window()`, `8761c3b` having covered only `windows()` — **upstream #332**. See below | `try_target()`/`try_window()`, ten call sites |
 | *layout() sweep* | `Hy3Node::layout()` is documented nullable and was dereferenced unguarded at nine sites, one of them inside `recalcSizePosRecursive` — the frame **#241** crashes in. See below | `recalcLayoutGeometry()`/`layoutWorkspace()`, nine call sites |
 | *makegroup toggle* | `makegroup … toggle` was a permanent no-op on a workspace holding one window — **upstream #192**. See below | `Hy3Layout::makeGroupOnWorkspace` |
+| *floating movewindow* | with a floating window focused, `hy3:movewindow` moved a **tiled** node instead — `getWorkspaceFocusedNode` answers with whatever tiled node last had focus, and the user is not looking at it. Reported as **#223**; **#226** and **#85** are the feature half, which is feature 5 above | `Hy3Layout::shiftWindow` |
 | *tab font size* | a size written into `tabs:text_font` was parsed and then overwritten by `text_height`, so the standard way to write a pango description silently did nothing — **upstream #275**, no PR | `Hy3TabBarEntry::renderText` |
 
 Four of these are worth re-checking against upstream before each rebase, because they are the
@@ -370,6 +395,13 @@ The one thing they would catch is a regression that makes the guards themselves 
 a node on the floor instead of removing it, or skipping the tree removal along with the window
 cleanup in `removeTarget`. That is what "layout still tiles after the unmap" is for.
 
+**The floating movewindow block is a real regression test**, unlike most of the above: five of
+its ten assertions fail against a build with the branch disabled, verified that way rather than
+argued. Two are the wrong-window move itself — the two tiled windows swap places while the
+floating one sits still — and they need *two* tiled windows to be observable at all: with one,
+the bad move is a no-op and the assertion passes against a build carrying the bug. The other
+three are the feature and the fallthrough hop.
+
 Two findings from the same review were deliberately **not** acted on, and should stay that way:
 
 - `debugNodes` returns the node tree through `SDispatchResult::error`, which looks like abuse
@@ -393,7 +425,7 @@ plugin that owns every window is disruptive at best, and has crashed the composi
 
 ```sh
 test/nested.sh start 2   # nested Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 62 assertions covering everything below
+test/smoke.sh            # 72 assertions covering everything below
 test/nested.sh stop
 ```
 

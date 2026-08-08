@@ -82,6 +82,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 	// fork additions (not present upstream, see FORK.md)
 	CONF("special_focus_trap", Bool, false);
 	CONF("movewindow_monitor_fallthrough", Bool, false);
+	CONF("movewindow_floating", Bool, false);
 
 #undef CONF
 

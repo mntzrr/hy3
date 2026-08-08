@@ -585,6 +585,87 @@ check_eventually "#192 toggling off reclaims the gap"      "$BARE_TOP" top_of "$
 check "#192 instance survived the toggle"                  "yes"       "$(alive)"
 
 echo
+echo "== hy3:movewindow on floating windows =="
+# A floating window is not in the hy3 tree, so getWorkspaceFocusedNode hands
+# back whatever tiled node last had focus and upstream moves that one instead -
+# a window the user is not looking at (#223). The first two assertions are the
+# regression test for that, and they hold with the feature flag off, which is
+# the point: not moving the wrong window is a fix, moving the floating one is
+# the feature.
+left_of() { clients | jq -r --arg a "$1" '.[]|select(.address==$a)|.at[0]'; }
+right_of_x() { # right_of_x <addr> <baseline>
+	clients | jq -r --arg a "$1" --argjson x "$2" '.[]|select(.address==$a)|(.at[0] > $x)|tostring'
+}
+left_of_x() { # left_of_x <addr> <baseline>
+	clients | jq -r --arg a "$1" --argjson x "$2" '.[]|select(.address==$a)|(.at[0] < $x)|tostring'
+}
+
+# Two tiled windows, not one: moving the wrong node is only observable if the
+# tree has somewhere to move it to. With a single tiled window the bad move is
+# a no-op and the assertion passes against a build carrying the bug.
+tiled_geoms() { echo "$(geom "$1") $(geom "$2")"; }
+
+pin_mon0
+cleanup_windows
+spawn t_f || { echo "could not spawn t_f" >&2; exit 1; }
+spawn t_g || { echo "could not spawn t_g" >&2; exit 1; }
+spawn t_h || { echo "could not spawn t_h" >&2; exit 1; }
+FL=$(addr_of t_f); TI=$(addr_of t_g); TI2=$(addr_of t_h)
+[ -n "$FL" ] && [ -n "$TI" ] && [ -n "$TI2" ] || { echo "could not spawn the floating-move windows" >&2; exit 1; }
+
+focus "$FL"
+dispatch "hl.plugin.hy3.toggle_floating()" 0.5
+check_eventually "the moved window is floating"          "true" is_floating "$FL"
+
+# The tiled neighbours take the whole workspace once the other window floats -
+# sample their geometry only after that has settled, or the baseline is the
+# three-window one and every comparison against it is meaningless.
+TILED_GEOM=$(stable tiled_geoms "$TI" "$TI2")
+FLOAT_X=$(stable left_of "$FL")
+
+# Every move below goes right before it goes left. Floating a tiled window
+# keeps the geometry it had, so a window floated out of the left half of the
+# workspace is *already* against the left work edge: a left move there does
+# nothing whether the feature is on or off, and the assertion passes for the
+# wrong reason. This one failed that way during development.
+#
+# The fallthrough has to come off for the "off" pair as well - it is on for the
+# rest of the run, and a floating window at the work edge is exactly what it
+# hands to the next monitor.
+setflag movewindow_monitor_fallthrough false
+setflag movewindow_floating false
+dispatch "hl.plugin.hy3.move_window('r')" 0.4
+check "off: the tiled windows are left alone"            "$TILED_GEOM" "$(tiled_geoms "$TI" "$TI2")"
+check "off: the floating window stays put"               "$FLOAT_X"    "$(left_of "$FL")"
+
+setflag movewindow_floating true
+dispatch "hl.plugin.hy3.move_window('r')" 0.4
+check_eventually "on: snaps to the right work edge"      "true" right_of_x "$FL" "$FLOAT_X"
+check "on: the tiled windows are still left alone"       "$TILED_GEOM" "$(tiled_geoms "$TI" "$TI2")"
+
+RIGHT_X=$(stable left_of "$FL")
+dispatch "hl.plugin.hy3.move_window('l')" 0.4
+check_eventually "on: snaps to the left work edge"       "true" left_of_x "$FL" "$RIGHT_X"
+
+# An edge is a stop, not a step: the second move has nowhere to go. This is
+# what distinguishes hyprland's floating semantics from a sway-style nudge by
+# a fixed number of pixels, which is the other thing this could have been.
+LEFT_X=$(stable left_of "$FL")
+dispatch "hl.plugin.hy3.move_window('l')" 0.4
+check "on: the work edge is a stop, not a step"          "$LEFT_X" "$(left_of "$FL")"
+check_eventually "the floating window stayed on mon0"    "$M0"  where "$FL"
+
+# With both flags on the work edge is where the fallthrough takes over, the
+# same way it does for a node at the edge of the tree: the first move snaps,
+# the second one crosses. This is also the only thing a floating window did
+# before the feature existed, so it has to keep working.
+setflag movewindow_monitor_fallthrough true
+dispatch "hl.plugin.hy3.move_window('r')" 0.4
+dispatch "hl.plugin.hy3.move_window('r')" 0.5
+check_eventually "at the edge, it falls through to mon1" "$M1" where "$FL"
+check "instance survived the floating moves"             "yes" "$(alive)"
+
+echo
 echo "== teardown =="
 cleanup_windows
 check "instance survived the run"              "yes" "$(alive)"
