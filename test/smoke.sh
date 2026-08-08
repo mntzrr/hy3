@@ -175,6 +175,11 @@ M1_NAME=$(mon_field 1 name); M1="mon$(mon_field 1 id)"
 echo "monitors: $M0_NAME ($M0) | $M1_NAME ($M1)"
 
 echo "== setup =="
+# Start from a known monitor. Windows spawn wherever focus happens to be, so a
+# leftover focus on mon1 - from a previous run, or from poking at the instance
+# by hand between runs - silently puts the whole suite on the wrong screen and
+# fails every monitor assertion from here down, none of which names the cause.
+dispatch "hl.dsp.focus({ monitor = '$M0_NAME' })" 0.4
 cleanup_windows
 spawn t_a || { echo "could not spawn t_a" >&2; exit 1; }
 spawn t_b || { echo "could not spawn t_b" >&2; exit 1; }
@@ -387,6 +392,13 @@ narrower_than() { # narrower_than <addr> <baseline>
 	else echo "false (width ${w:-none} vs baseline $2)"; fi
 }
 
+wider_than() { # wider_than <addr> <baseline>
+	local w
+	w=$(width_of "$1")
+	if [ -n "$w" ] && [ "$w" -gt "$2" ] 2>/dev/null; then echo true
+	else echo "false (width ${w:-none} vs baseline $2)"; fi
+}
+
 # Fresh windows, not the ones the rest of the suite has been passing around.
 # This block used to measure t_a, forty-odd operations after it was spawned,
 # which made it the place where any earlier mistake surfaced - as a geometry
@@ -466,6 +478,37 @@ check "#332 instance survived a batched unmap"             "yes" "$(alive)"
 spawn t_x || { echo "could not respawn t_x after the unmap batch" >&2; exit 1; }
 X=$(addr_of t_x)
 check_eventually "#332 layout still tiles after the unmap" "$M0" where "$X"
+
+# #241: moving a fullscreen window across monitors. Upstream calls this a
+# crash; the null dereference it reported - moveNodeToWorkspace's follow branch
+# reaching node->parent with node null - is long gone, and this passes without
+# any of the fork's fixes. It is here because the fork *enables* the path:
+# hy3:movetomonitor and the movewindow fallthrough are how a node crosses a
+# monitor boundary at all, and a fullscreen window takes the moved_floating
+# branch, where hy3 never touches its node and hyprland's own move has to fire
+# the layout callbacks that fix the tree.
+#
+# The origin's remaining window reclaiming full width is the load-bearing half:
+# it says the moved node really left the origin tree, rather than being stranded
+# there while its window went elsewhere - which is exactly the state #332's
+# throw needs.
+cleanup_windows
+spawn t_f || { echo "could not spawn t_f" >&2; exit 1; }
+spawn t_g || { echo "could not spawn t_g" >&2; exit 1; }
+F=$(addr_of t_f); G=$(addr_of t_g)
+[ -n "$F" ] && [ -n "$G" ] || { echo "could not spawn fullscreen windows" >&2; exit 1; }
+settle_until where_is "$F" "$M0"
+FULL_WIDTH=$(stable width_of "$G")
+
+focus "$F"
+dispatch "hl.dsp.window.fullscreen()" 0.6
+check_eventually "#241 window is fullscreen on mon0"       "$M0" where "$F"
+dispatch "hl.plugin.hy3.move_to_monitor('+1',{follow=true})" 0.8
+check_eventually "#241 fullscreen window crossed monitors" "$M1" where "$F"
+check "#241 instance survived the move"                    "yes" "$(alive)"
+check_eventually "#241 origin reclaimed the space"         "true" wider_than "$G" "$FULL_WIDTH"
+dispatch "hl.dsp.window.fullscreen()" 0.6
+check_eventually "#241 unfullscreens tiled on the target"  "$M1" where "$F"
 
 echo
 echo "== teardown =="

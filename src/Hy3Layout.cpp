@@ -1023,7 +1023,7 @@ static void refocusMonitor(PHLMONITOR monitor) {
 
 bool Hy3Layout::shiftMonitor(Hy3Node& node, ShiftDirection direction, bool follow) {
 	return this->moveToMonitor(
-	    node.layout()->workspace().get(),
+	    node.layoutWorkspace().get(),
 	    this->monitorInDirection(direction),
 	    follow,
 	    false
@@ -1159,7 +1159,11 @@ void Hy3Layout::moveNodeToWorkspace(
 	auto focused_window = Desktop::focusState()->window();
 	auto* focused_window_node = this->getNodeFromWindow(focused_window.get());
 
-	auto origin_ws = node != nullptr           ? node->layout()->workspace()
+	// fork: layoutWorkspace() is null for a detached node rather than a crash, and
+	// a node that cannot name its own workspace must fall through to the focused
+	// window's rather than short-circuit the whole ternary to null.
+	auto node_ws = node != nullptr ? node->layoutWorkspace() : nullptr;
+	auto origin_ws = valid(node_ws)            ? node_ws
 	               : focused_window != nullptr ? focused_window->m_workspace
 	                                           : nullptr;
 
@@ -1260,7 +1264,7 @@ void Hy3Layout::moveNodeToWorkspace(
 		// moved was the floating one. Following it would focus a window that
 		// never left, so the floating case has to be handled on its own.
 		if (node != nullptr && !moved_floating) {
-			node->layout()->recalcGeometry();
+			node->recalcLayoutGeometry();
 			node->focus(warp, Desktop::FOCUS_REASON_KEYBIND);
 		} else if (focused_window != nullptr) {
 			Desktop::focusState()->fullWindowFocus(focused_window, Desktop::FOCUS_REASON_KEYBIND);
@@ -1348,7 +1352,10 @@ Hy3Node* findTabBarAt(Hy3Node& node, Vector2D pos, Hy3Node** focused_node) {
 	static const auto tab_bar_padding = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:padding");
 	// clang-format on
 
-	auto workspace_rule = Config::workspaceRuleMgr()->getWorkspaceRuleFor(node.layout()->workspace());
+	// fork: null for a detached node, see Hy3Node::recalcLayoutGeometry
+	auto ws = node.layoutWorkspace();
+	auto workspace_rule = valid(ws) ? Config::workspaceRuleMgr()->getWorkspaceRuleFor(ws)
+	                                : std::optional<Config::CWorkspaceRule>();
 	auto gaps_in = workspace_rule.and_then([](auto r) { return r.m_gapsIn; }).value_or(*sc<Config::CCssGapData*>(p_gaps_in.ptr()));
 
 	auto inset = *tab_bar_height + *tab_bar_padding + gaps_in.m_top;

@@ -47,6 +47,20 @@ Hy3Layout* Hy3Node::layout() {
 	return r ? r->algo : nullptr;
 }
 
+// fork: layout() returns null for a node with no root - one extracted from its
+// tree, or one whose parent chain is mid-surgery. Callers dereferenced it
+// unconditionally, which is a SIGSEGV inside whatever they called next; when
+// that next thing was recalcGeometry the crash landed in
+// recalcSizePosRecursive, which is upstream #241's frame.
+void Hy3Node::recalcLayoutGeometry(bool no_animation) {
+	if (auto* l = this->layout()) l->recalcGeometry(no_animation);
+}
+
+PHLWORKSPACE Hy3Node::layoutWorkspace() {
+	auto* l = this->layout();
+	return l ? l->workspace() : nullptr;
+}
+
 void Hy3Node::assertNotRoot() {
 	if (this->is_root()) {
 		hy3_log(ERR, "assertNotRoot failed: node {:x} is root", (uintptr_t) this);
@@ -381,7 +395,13 @@ void Hy3Node::recalcSizePosRecursive(CBox offsets, bool no_animation) {
 	auto tsize = this->visualBox.size();
 
 	auto& group = this->as_group();
-	auto workspace_rule = Config::workspaceRuleMgr()->getWorkspaceRuleFor(this->layout()->workspace());
+	// fork: layoutWorkspace(), and only ask for a rule when there is a workspace
+	// to ask about. layout() is null for a detached node, and this dereference -
+	// inside recalcSizePosRecursive - is the frame upstream #241 crashes in.
+	auto ws = this->layoutWorkspace();
+	// ::valid - Hy3Node::valid() is a different, argument-less thing and shadows it
+	auto workspace_rule = ::valid(ws) ? Config::workspaceRuleMgr()->getWorkspaceRuleFor(ws)
+	                                  : std::optional<Config::CWorkspaceRule>();
 	auto gaps_in = workspace_rule.and_then([](auto r) { return r.m_gapsIn; }).value_or(*sc<Config::CCssGapData*>(p_gaps_in.ptr()));
 
 	auto expand_focused = group.expand_focused != ExpandFocusType::NotExpanded;
@@ -869,7 +889,7 @@ void Hy3Node::wrap(Hy3GroupLayout layout, GroupEphemeralityOption ephemeral, boo
 	{
 		parentGroup.setLayout(layout);
 		parentGroup.setEphemeral(ephemeral);
-		this->layout()->recalcGeometry();
+		this->recalcLayoutGeometry();
 		this->parent->updateTabBarRecursive();
 		return;
 	}
@@ -889,7 +909,7 @@ void Hy3Node::wrap(Hy3GroupLayout layout, GroupEphemeralityOption ephemeral, boo
 	    || ephemeral == GroupEphemeralityOption::ForceEphemeral)
 		group.setEphemeral(GroupEphemeralityOption::ForceEphemeral);
 
-	this->layout()->recalcGeometry();
+	this->recalcLayoutGeometry();
 	group_node.updateTabBarRecursive();
 }
 
@@ -1000,7 +1020,7 @@ void Hy3Node::resize(ShiftDirection direction, double delta, bool no_animation) 
 					this->size_ratio = requested_size_ratio;
 					neighbor->size_ratio = requested_neighbor_size_ratio;
 
-					this->layout()->recalcGeometry(no_animation);
+					this->recalcLayoutGeometry(no_animation);
 				}
 			}
 		}

@@ -223,7 +223,8 @@ commit whatever its hash has become.
 | `617a457` | an empty-but-live root was destroyed and rebuilt, because `getWorkspaceRootGroup` returns null for both "no root" and "empty root" | `Hy3Layout::insertNode` |
 | `46913ef` | `hy3:togglefocuslayer` was the only warping dispatcher that ignored `cursor:no_warps` | `dispatch_togglefocuslayer` |
 | `696fc23` | a `hy3_log` call with printf conversions into a `std::format` sink, a doubled condition, a doubly-registered animation callback, a header/definition parameter name mismatch | `dispatch_focustab`, `warpCursor`, `Hy3TabBarEntry`, `TabGroup.hpp` |
-| *guard sweep* | every remaining unguarded `as_target()`/`as_window()`, `8761c3b` having covered only `windows()` — **upstream #332** and the backtrace attached to **#241**. See below | `try_target()`/`try_window()`, ten call sites |
+| *guard sweep* | every remaining unguarded `as_target()`/`as_window()`, `8761c3b` having covered only `windows()` — **upstream #332**. See below | `try_target()`/`try_window()`, ten call sites |
+| *layout() sweep* | `Hy3Node::layout()` is documented nullable and was dereferenced unguarded at nine sites, one of them inside `recalcSizePosRecursive` — the frame **#241** crashes in. See below | `recalcLayoutGeometry()`/`layoutWorkspace()`, nine call sites |
 
 Four of these are worth re-checking against upstream before each rebase, because they are the
 ones upstream is most likely to fix independently and in a different way: `97273d2`
@@ -240,16 +241,21 @@ result regardless. `8761c3b` fixed one site; this fixes the rest, by adding non-
 `try_target()`/`try_window()` next to them and using those wherever the tree is walked or
 unwound.
 
-Two of the sites are the reported crashes:
+One of the sites is a reported crash:
 
 - **`findNodeFromTargetRecursive`** — walks *every* target in the tree looking for one, so
   `as_target()` threw on the first expired node it passed, before reaching the node it was
   asked for. It unwinds through `Layout::CAlgorithm::removeTarget` into `CWindow::unmapWindow`,
   which does not catch: SIGABRT on window close, watchdog restart into safe mode. This is
   **#332**, and the fork was carrying it.
-- **`recalcSizePosRecursive`** — `as_window()->setHidden()` with no null check, on a path that
-  runs during teardown. A SIGSEGV with this frame on top, called from `moveNodeToWorkspace`, is
-  the crash report attached to **#241**.
+
+`recalcSizePosRecursive`'s `as_window()->setHidden()` was also unguarded and is fixed here, but
+**it is not #241**, which an earlier version of this file claimed. #241's own backtrace is a
+null `node` reaching `node->parent->recalcSizePosRecursive()` in `moveNodeToWorkspace`'s follow
+branch — a dereference this fork had already removed via the #304 and #305 backports before the
+guard sweep existed. Five fullscreen cross-monitor paths were probed against the current tree
+and none crashes. What the guard fixes is a *different* null in the same function: a live node
+whose window is already torn down.
 
 The rest are the same pattern with a smaller blast radius: `removeTarget` (the node must still
 leave the tree when its window is gone — only the rule cleanup is skipped), `resizeTarget`
@@ -259,6 +265,35 @@ and `findOverlappingWindows`.
 
 `getNodeFromTarget` also gained a null-argument guard, which the switch to `try_target()`
 makes load-bearing: a null needle would otherwise match the first expired node in the tree.
+
+### The layout() sweep
+
+`Hy3Node::layout()` ends `return r ? r->algo : nullptr` — it is nullable by construction, for a
+node with no root: one extracted from its tree, or one whose parent chain is mid-surgery. All
+nine callers dereferenced it anyway, which is a SIGSEGV inside whatever they called next.
+
+Two wrappers cover everything they wanted from it — `recalcLayoutGeometry()`, a no-op without a
+layout, and `layoutWorkspace()`, null without one. The interesting site is
+`recalcSizePosRecursive`'s `getWorkspaceRuleFor(this->layout()->workspace())`: a detached node
+crashes there, in **the same frame #241 reports**. That does not make it #241 — #241's own
+dereference is gone, see above — but it is the one remaining way to produce that backtrace, and
+it is why "fix #241 properly" lands here rather than in the guard sweep.
+
+`moveNodeToWorkspace`'s `origin_ws` needed more than a guard: the node's workspace is the first
+arm of a three-way ternary, so a detached node has to *fall through* to the focused window's
+workspace, not short-circuit the whole expression to null.
+
+Two things to know about the diff. `Hy3Node::valid()` shadows hyprland's free `valid()` inside
+member functions, so the workspace checks are written `::valid(ws)`. And `getWorkspaceRuleFor`
+is only called when there is a workspace to ask about — it takes `PHLWORKSPACE` by value and
+nothing here establishes that it tolerates a null one.
+
+The suite covers the fullscreen cross-monitor path under **#241** — five assertions, of which
+"origin reclaimed the space" is the load-bearing one: it says the moved node really left the
+origin tree rather than being stranded there while its window went elsewhere, which is exactly
+the state #332's throw needs. They pass without any of these fixes. The path is covered because
+the fork *enables* it — `hy3:movetomonitor` and the movewindow fallthrough are how a node
+crosses a monitor boundary at all.
 
 **#332 is not reproduced by the suite.** The throw needs a node whose target expired without
 `removeTarget` ever running — stranded, then walked past by the next unmap. The only known way
@@ -296,7 +331,7 @@ plugin that owns every window is disruptive at best, and has crashed the composi
 
 ```sh
 test/nested.sh start 2   # nested Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 50 assertions covering everything below
+test/smoke.sh            # 55 assertions covering everything below
 test/nested.sh stop
 ```
 
@@ -328,6 +363,15 @@ Three changes, verified by injecting the state directly rather than waiting for 
 
 When chasing a geometry failure in this suite, check `floating` before anything else. A tiled
 window here is 630 wide with two on a monitor; 800 means floating, every time.
+
+`== setup ==` now focuses mon0 before spawning anything. Windows spawn wherever focus happens
+to be, so an instance left with focus on mon1 — by a previous run, or by poking at it by hand
+between runs — put the whole suite on the wrong screen and failed every monitor assertion from
+there down, none of which named the cause. This bit twice during development. Verified by
+parking focus on mon1 deliberately and confirming a full pass.
+
+Also update this count when adding assertions; a stale number here is how a silently skipped
+section goes unnoticed.
 
 The workarounds the harness is built around — why the extra monitors are nested Wayland
 outputs, why `hy3_log` is not an oracle, why the monitors must be edge to edge — are in

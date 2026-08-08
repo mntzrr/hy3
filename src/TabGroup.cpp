@@ -501,8 +501,12 @@ void Hy3TabBar::updateNodeList(std::list<UP<Hy3Node>>& nodes) {
 		// previous monitor while monitor.focused is being delivered, which is
 		// exactly when this runs on a monitor switch.
 		auto focused_monitor = g_focusedMonitor;
+		// fork: layout() is null for a detached node, and this runs per entry on
+		// every tab bar update - a render-adjacent path with no business throwing.
+		auto* node_layout = (*node)->layout();
 		entry->setMonitorActive(
-		    active && (!focused_monitor || (*node)->layout()->monitor() == focused_monitor)
+		    active && node_layout != nullptr
+		    && (!focused_monitor || node_layout->monitor() == focused_monitor)
 		);
 
 		entry->setUrgent((*node)->isUrgent());

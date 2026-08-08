@@ -83,6 +83,12 @@ struct Hy3Node {
 	Hy3RootNode* root();
 	Hy3Layout* layout();
 
+	// fork: layout() is nullable - root() finds no Hy3RootNode for a node that is
+	// detached from its tree, and every caller dereferenced the result anyway.
+	// These wrap the only two things they wanted from it.
+	void recalcLayoutGeometry(bool no_animation = false);
+	PHLWORKSPACE layoutWorkspace();
+
 	static UP<Hy3Node> create(SP<Layout::ITarget> target);
 	static UP<Hy3Node> create(Hy3GroupLayout group_layout);
 
