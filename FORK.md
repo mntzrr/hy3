@@ -267,6 +267,7 @@ commit whatever its hash has become.
 | *layout() sweep* | `Hy3Node::layout()` is documented nullable and was dereferenced unguarded at nine sites, one of them inside `recalcSizePosRecursive` — the frame **#241** crashes in. See below | `recalcLayoutGeometry()`/`layoutWorkspace()`, nine call sites |
 | *makegroup toggle* | `makegroup … toggle` was a permanent no-op on a workspace holding one window — **upstream #192**. See below | `Hy3Layout::makeGroupOnWorkspace` |
 | *floating movewindow* | with a floating window focused, `hy3:movewindow` moved a **tiled** node instead — `getWorkspaceFocusedNode` answers with whatever tiled node last had focus, and the user is not looking at it. Reported as **#223**; **#226** and **#85** are the feature half, which is feature 5 above | `Hy3Layout::shiftWindow` |
+| *floating tree edits* | the same thing, quietly: `makegroup`, `changegroup`, `untab`, `toggletab`, `setswallow` and `expand` all reshaped the tiled tree behind a floating window. Never reported — nothing moves where the user is looking. See below | `getWorkspaceFocusedNodeIfTiled()`, nine call sites |
 | *tab font size* | a size written into `tabs:text_font` was parsed and then overwritten by `text_height`, so the standard way to write a pango description silently did nothing — **upstream #275**, no PR | `Hy3TabBarEntry::renderText` |
 
 Four of these are worth re-checking against upstream before each rebase, because they are the
@@ -356,6 +357,35 @@ group with no bar and no inset looks identical either way, so the no-op stays.
 The reporter also saw crashes a few seconds after toggling. Nothing like that reproduced here
 over repeated toggle cycles, and no claim is made about it.
 
+### Tree edits behind a floating window
+
+`getWorkspaceFocusedNode` answers with the tiled node that last held focus whether or not the
+focused window is one — a floating window is not in the tree at all. Every dispatcher that
+*reshapes* the tree therefore reshaped it behind the floating window the user was looking at:
+`makegroup` tabbed windows that were never the target, `changegroup` relaid out a group that
+was not on screen, `expand` and `setswallow` acted on a node chosen for them.
+
+`hy3:movewindow` was the visible form of the same bug and is reported as **#223** (feature 5
+and the row above). These are the quiet ones — nothing moves where the user is looking, which
+is presumably why nobody has reported them.
+
+Nine call sites now go through `getWorkspaceFocusedNodeIfTiled()`, which is
+`getWorkspaceFocusedNode()` plus "null while a floating window holds focus":
+`makeGroupOnWorkspace`, `makeOppositeGroupOnWorkspace`, `changeGroupOnWorkspace`,
+`untabGroupOnWorkspace`, `toggleTabGroupOnWorkspace`, `changeGroupToOppositeOnWorkspace`,
+`changeGroupEphemeralityOnWorkspace`, `setNodeSwallow` and `expand`. One wrapper rather than
+nine guard clauses, so the edit inside each upstream function is a single call swap.
+
+Doing nothing is the whole of the answer, unlike movewindow: none of these has a floating
+equivalent to fall back to — a floating window cannot be tabbed, wrapped or swallowed.
+`killFocusedNode` is **not** in the list and needs no change; upstream already guards it, and
+it closes the floating window, which is the right thing for that one.
+
+The guard is on the focused *window* being floating, not on a floating window existing. The
+suite's control assertion is there for that: with focus back on the tiled layer, `makegroup`
+must still tab. A guard one step too broad passes every other assertion in the block and
+breaks `makegroup` outright.
+
 ### The tab font size
 
 `tabs:text_font` is a pango font description, and the standard way to write one carries the
@@ -402,6 +432,12 @@ floating one sits still — and they need *two* tiled windows to be observable a
 the bad move is a no-op and the assertion passes against a build carrying the bug. The other
 three are the feature and the fallthrough hop.
 
+The tree-edit block is two regression tests and three checks around them, verified the same
+way: `makegroup` and `changegroup` both tab the windows behind the floating one against a
+build with the guard disabled, and the geometry oracle catches it as a bar inset. **`expand`
+passes either way** — on this tree it changes no geometry at all, so it is a sanity check, not
+a regression test. The other two are the floating precondition and the tiled control.
+
 Two findings from the same review were deliberately **not** acted on, and should stay that way:
 
 - `debugNodes` returns the node tree through `SDispatchResult::error`, which looks like abuse
@@ -425,7 +461,7 @@ plugin that owns every window is disruptive at best, and has crashed the composi
 
 ```sh
 test/nested.sh start 2   # nested Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 72 assertions covering everything below
+test/smoke.sh            # 78 assertions covering everything below
 test/nested.sh stop
 ```
 

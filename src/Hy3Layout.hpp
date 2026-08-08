@@ -204,6 +204,14 @@ public:
 	    bool stop_at_expanded = false
 	);
 
+	// fork: null while a floating window holds focus - for the dispatchers that
+	// reshape the tiled tree, which must not do that behind a floating window.
+	Hy3Node* getWorkspaceFocusedNodeIfTiled(
+	    const CWorkspace* workspace,
+	    bool ignore_group_focus = false,
+	    bool stop_at_expanded = false
+	);
+
 	Hy3Node* getNodeFromWindow(const Desktop::View::CWindow*);
 	Hy3Node* getNodeFromTarget(SP<Layout::ITarget> target);
 

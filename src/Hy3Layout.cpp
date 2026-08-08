@@ -655,7 +655,7 @@ void Hy3Layout::makeGroupOnWorkspace(
     GroupEphemeralityOption ephemeral,
     bool toggle
 ) {
-	auto* node = this->getWorkspaceFocusedNode(workspace);
+	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace);
 	if (node == nullptr) return;
 	node = &node->getPlacementActor();
 
@@ -700,14 +700,14 @@ void Hy3Layout::makeOppositeGroupOnWorkspace(
     const CWorkspace* workspace,
     GroupEphemeralityOption ephemeral
 ) {
-	auto* node = this->getWorkspaceFocusedNode(workspace);
+	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace);
 	if (node == nullptr) return;
 	node = &node->getPlacementActor();
 	this->makeOppositeGroupOn(*node, ephemeral);
 }
 
 void Hy3Layout::changeGroupOnWorkspace(const CWorkspace* workspace, Hy3GroupLayout layout) {
-	auto* node = this->getWorkspaceFocusedNode(workspace);
+	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace);
 	if (node == nullptr) return;
 	node = &node->getPlacementActor();
 
@@ -715,7 +715,7 @@ void Hy3Layout::changeGroupOnWorkspace(const CWorkspace* workspace, Hy3GroupLayo
 }
 
 void Hy3Layout::untabGroupOnWorkspace(const CWorkspace* workspace) {
-	auto* node = this->getWorkspaceFocusedNode(workspace);
+	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace);
 	if (node == nullptr) return;
 	node = &node->getPlacementActor();
 
@@ -723,7 +723,7 @@ void Hy3Layout::untabGroupOnWorkspace(const CWorkspace* workspace) {
 }
 
 void Hy3Layout::toggleTabGroupOnWorkspace(const CWorkspace* workspace) {
-	auto* node = this->getWorkspaceFocusedNode(workspace);
+	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace);
 	if (node == nullptr) return;
 	node = &node->getPlacementActor();
 
@@ -731,7 +731,7 @@ void Hy3Layout::toggleTabGroupOnWorkspace(const CWorkspace* workspace) {
 }
 
 void Hy3Layout::changeGroupToOppositeOnWorkspace(const CWorkspace* workspace) {
-	auto* node = this->getWorkspaceFocusedNode(workspace);
+	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace);
 	if (node == nullptr) return;
 	node = &node->getPlacementActor();
 
@@ -739,7 +739,7 @@ void Hy3Layout::changeGroupToOppositeOnWorkspace(const CWorkspace* workspace) {
 }
 
 void Hy3Layout::changeGroupEphemeralityOnWorkspace(const CWorkspace* workspace, bool ephemeral) {
-	auto* node = this->getWorkspaceFocusedNode(workspace);
+	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace);
 	if (node == nullptr) return;
 	node = &node->getPlacementActor();
 
@@ -1583,7 +1583,7 @@ hastab:
 }
 
 void Hy3Layout::setNodeSwallow(const CWorkspace* workspace, SetSwallowOption option) {
-	auto* node = this->getWorkspaceFocusedNode(workspace);
+	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace);
 	if (node == nullptr) return;
 	node->assertNotRoot();
 
@@ -1618,7 +1618,7 @@ void Hy3Layout::expand(
     ExpandOption option,
     ExpandFullscreenOption fs_option
 ) {
-	auto* node = this->getWorkspaceFocusedNode(workspace, false, true);
+	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace, false, true);
 	if (node == nullptr) return;
 	PHLWINDOW window;
 
@@ -1791,6 +1791,32 @@ Hy3Node* Hy3Layout::getWorkspaceFocusedNode(
 	auto* rootNode = this->getWorkspaceRootGroup(workspace);
 	if (rootNode == nullptr) return nullptr;
 	return &rootNode->getFocusedNode(ignore_group_focus, stop_at_expanded);
+}
+
+// fork: the focused node, for the dispatchers that reshape the tiled tree.
+//
+// getWorkspaceFocusedNode answers with the tiled node that last held focus
+// whether or not the focused window is one - a floating window is not in the
+// tree at all. Every dispatcher that restructures the tree therefore
+// restructured it behind the floating window the user was looking at: makegroup
+// tabbed windows that were never the target, changegroup relaid out a group
+// that was not on screen. hy3:movewindow was the visible form of the same
+// thing, reported upstream as #223; these are the quiet ones, since nothing
+// moves where the user is looking.
+//
+// Doing nothing is the whole of the answer here. Unlike movewindow, none of
+// these has a floating equivalent to fall back to - a floating window cannot be
+// tabbed, wrapped or swallowed - and unlike killactive, which upstream does
+// guard, there is nothing sensible to do to the floating window instead.
+Hy3Node* Hy3Layout::getWorkspaceFocusedNodeIfTiled(
+    const CWorkspace* workspace,
+    bool ignore_group_focus,
+    bool stop_at_expanded
+) {
+	auto window = Desktop::focusState()->window();
+	if (window != nullptr && window->m_isFloating) return nullptr;
+
+	return this->getWorkspaceFocusedNode(workspace, ignore_group_focus, stop_at_expanded);
 }
 
 Hy3Node* Hy3Layout::getNodeFromWindow(const CWindow* window) {

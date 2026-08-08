@@ -666,6 +666,47 @@ check_eventually "at the edge, it falls through to mon1" "$M1" where "$FL"
 check "instance survived the floating moves"             "yes" "$(alive)"
 
 echo
+echo "== tree edits while a floating window has focus =="
+# The quiet half of the same problem: makegroup and friends also act on the
+# node getWorkspaceFocusedNode hands back, so they restructured the tiled tree
+# behind the floating window the user was looking at. Nothing moves where the
+# user is looking, which is why this one went unreported.
+#
+# The oracle is the geometry of the two tiled windows: a workspace that got
+# tabbed pushes them down by the bar inset, as in #192, and an expand widens
+# one of them. A workspace nothing happened to leaves both where they were.
+
+pin_mon0
+cleanup_windows
+spawn t_i || { echo "could not spawn t_i" >&2; exit 1; }
+spawn t_j || { echo "could not spawn t_j" >&2; exit 1; }
+spawn t_k || { echo "could not spawn t_k" >&2; exit 1; }
+P=$(addr_of t_i); Q=$(addr_of t_j); K=$(addr_of t_k)
+[ -n "$P" ] && [ -n "$Q" ] && [ -n "$K" ] || { echo "could not spawn the tree-edit windows" >&2; exit 1; }
+
+focus "$K"
+dispatch "hl.plugin.hy3.toggle_floating()" 0.5
+check_eventually "the focused window is floating"        "true" is_floating "$K"
+
+TILED=$(stable tiled_geoms "$P" "$Q")
+TOP=$(top_of "$P")
+dispatch "hl.plugin.hy3.make_group('tab')" 0.5
+check "makegroup leaves the tiled tree alone"            "$TILED" "$(tiled_geoms "$P" "$Q")"
+dispatch "hl.plugin.hy3.change_group('tab')" 0.5
+check "changegroup leaves the tiled tree alone"          "$TILED" "$(tiled_geoms "$P" "$Q")"
+dispatch "hl.plugin.hy3.expand('expand')" 0.5
+check "expand leaves the tiled tree alone"               "$TILED" "$(tiled_geoms "$P" "$Q")"
+
+# The control, and the point of it: the guard is on the focused window being
+# floating, not on a floating window existing. With focus back on the tiled
+# layer the same dispatcher has to work exactly as it always did - a guard that
+# is too broad passes every assertion above and breaks makegroup outright.
+focus "$P"
+dispatch "hl.plugin.hy3.make_group('tab')" 0.6
+check_eventually "with tiled focus it still tabs"        "true" below "$P" "$TOP"
+check "instance survived the tree edits"                 "yes" "$(alive)"
+
+echo
 echo "== teardown =="
 cleanup_windows
 check "instance survived the run"              "yes" "$(alive)"
