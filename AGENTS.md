@@ -135,6 +135,17 @@ from a hand-run check.
 - **Confirm the running plugin is the one you just built.** `grep hy3 /proc/<pid>/maps` — and
   note that a `(deleted)` suffix means the old inode is still resident, i.e. the new file was
   never loaded. Print field 6 (the path), not the last field.
+- **A new assertion that warps the cursor moves every later spawn.** Hyprland tracks the
+  current monitor by cursor position regardless of `input:follow_mouse`, and new windows go to
+  the current monitor. Adding one warping assertion mid-suite silently relocated four
+  downstream blocks to mon1 and failed five assertions, none of which mentioned the cursor.
+  Every block in `test/smoke.sh` that spawns now calls `pin_mon0` first rather than inheriting
+  where the previous block left things. Do the same in a hand-run check.
+- **Establish the baseline before believing a failure is yours.** Those four failures looked
+  like a regression in the code under test; `git stash && cmake --build build` and a rerun
+  showed the pre-change tree passing every assertion, which pointed straight at the harness
+  instead. Restarting the nested instance is required after a rebuild — it holds the old
+  `.so` open otherwise.
 
 ## Hyprland 0.56 config API
 

@@ -116,6 +116,15 @@ focus() {
 	settle_until addr_is "$1"
 }
 
+# Windows spawn on whatever monitor is current, which is why setup pins it -
+# see the note there. Every later block that spawns has to pin it again rather
+# than inherit it: the sections in between move windows across monitor edges,
+# and hyprland tracks the current monitor by cursor position whether or not
+# focus follows the pointer. A block that assumes it spawns on mon0 because the
+# block before it happened to leave things there fails, later, in an assertion
+# that names a monitor and not the reason.
+pin_mon0() { dispatch "hl.dsp.focus({ monitor = '$M0_NAME' })" 0.4; }
+
 alive() { kill -0 "$(cat "${TMPDIR:-/tmp}/hy3-nested/pid")" 2>/dev/null && echo yes || echo no; }
 
 # Composite readers, so a two-window assertion can be polled as one value.
@@ -406,6 +415,7 @@ wider_than() { # wider_than <addr> <baseline>
 #
 # Two windows, not one: makegroup on a workspace holding a single client is its
 # own upstream bug (#192), and this assertion is not about that.
+pin_mon0
 cleanup_windows
 spawn t_v || { echo "could not spawn t_v" >&2; exit 1; }
 spawn t_w || { echo "could not spawn t_w" >&2; exit 1; }
@@ -450,6 +460,7 @@ echo "== fixes to upstream bugs =="
 # in one batch does not take the compositor down and does not leave the tree
 # holding stale nodes. The guards themselves are argued from the code path, not
 # from these assertions.
+pin_mon0
 cleanup_windows
 for t in t_x t_y t_z; do
 	spawn "$t" || { echo "could not spawn $t" >&2; exit 1; }
@@ -492,6 +503,7 @@ check_eventually "#332 layout still tiles after the unmap" "$M0" where "$X"
 # it says the moved node really left the origin tree, rather than being stranded
 # there while its window went elsewhere - which is exactly the state #332's
 # throw needs.
+pin_mon0
 cleanup_windows
 spawn t_f || { echo "could not spawn t_f" >&2; exit 1; }
 spawn t_g || { echo "could not spawn t_g" >&2; exit 1; }
