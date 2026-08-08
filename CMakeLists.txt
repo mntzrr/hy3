@@ -13,6 +13,17 @@ endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(DEPS REQUIRED hyprland pixman-1 libdrm pango pangocairo libinput wayland-client xkbcommon)
 
+# src/dispatchers.cpp includes hyprland's lua binding headers, which include
+# <lua.h>. Nothing in hyprland.pc points at it, so this only ever built where
+# the distribution happens to install lua.h directly in /usr/include - on a
+# distribution that puts it under /usr/include/lua5.4 the build fails.
+#
+# Headers only, deliberately: the lua symbols are resolved from hyprland at
+# load time, which is why this has always linked without liblua on the command
+# line. Linking one would add a DT_NEEDED on a lua that need not be the one
+# hyprland itself uses.
+find_package(Lua REQUIRED)
+
 add_library(hy3 SHARED
 	src/main.cpp
 	src/dispatchers.cpp
@@ -38,6 +49,6 @@ if (HY3_NO_VERSION_CHECK)
 	target_compile_definitions(hy3 PRIVATE -DHY3_NO_VERSION_CHECK=TRUE)
 endif()
 
-target_include_directories(hy3 PRIVATE ${DEPS_INCLUDE_DIRS})
+target_include_directories(hy3 PRIVATE ${DEPS_INCLUDE_DIRS} ${LUA_INCLUDE_DIR})
 
 install(TARGETS hy3 LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
