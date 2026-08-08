@@ -269,6 +269,10 @@ assertions added under "fixes to upstream bugs" cover the observable half only a
 a pre-fix build — sanity checks, like #298's and #304's, not regression tests. The guards are
 argued from the code path.
 
+The one thing they would catch is a regression that makes the guards themselves wrong: dropping
+a node on the floor instead of removing it, or skipping the tree removal along with the window
+cleanup in `removeTarget`. That is what "layout still tiles after the unmap" is for.
+
 Two findings from the same review were deliberately **not** acted on, and should stay that way:
 
 - `debugNodes` returns the node tree through `SDispatchResult::error`, which looks like abuse
@@ -292,7 +296,7 @@ plugin that owns every window is disruptive at best, and has crashed the composi
 
 ```sh
 test/nested.sh start 2   # nested Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 48 assertions covering everything below
+test/smoke.sh            # 50 assertions covering everything below
 test/nested.sh stop
 ```
 
@@ -301,12 +305,29 @@ hand. `test/smoke.sh` discovers monitor names and ids rather than assuming them,
 `HY3_TEST_TERM` (default `alacritty`) and `HY3_TEST_TIMEOUT` (default 6s, raise it on a
 loaded machine).
 
-One assertion is known to flake: **#296's "a wrapper group was created"** occasionally reports
-the wrapped width as equal to the baseline. `TAB_WIDTH` is sampled through `stable()`, but
-`stable()` only waits for two consecutive equal reads, which a slow relayout can satisfy while
-still mid-flight. Seen once in four runs. Re-run before treating it as a real failure — and if
-it is chased properly, the fix is to sample the baseline against a known-good geometry rather
-than against "stopped changing".
+**#296's "a wrapper group was created" used to flake**, reporting `width 800 vs baseline 800`.
+It was not a timing problem — 800x600 is alacritty's *floating* default, against 630 wide for a
+tiled window here, so the number was the diagnosis: the block was measuring a floating window,
+whose size no `makegroup` changes.
+
+It got one because it measured `t_a`, forty-odd operations after the setup that spawned it. The
+suspected origin is the `togglefloating` block: its three toggles only mean "unmount, float on,
+float off" if the first finds `t_a` on the scratchpad, and if it does not, each shifts by a step
+and the block ends leaving `t_a` floating. That matches the three failures the flaky run
+reported — the two float assertions, and #296 far downstream.
+
+Three changes, verified by injecting the state directly rather than waiting for the flake:
+
+- #296 spawns its own two windows after a `cleanup_windows` instead of inheriting `t_a`, so it
+  is no longer where unrelated earlier mistakes surface. Two, not one: `makegroup` on a
+  single-client workspace is its own upstream bug (#192).
+- `narrower_than` checks floating state first and says so, because "is it narrower" is not a
+  meaningful question about a window whose size is fixed.
+- The `togglefloating` block asserts that `t_a` starts on the scratchpad, so a parity shift
+  fails by name where it happens.
+
+When chasing a geometry failure in this suite, check `floating` before anything else. A tiled
+window here is 630 wide with two on a monitor; 800 means floating, every time.
 
 The workarounds the harness is built around — why the extra monitors are nested Wayland
 outputs, why `hy3_log` is not an oracle, why the monitors must be edge to edge — are in

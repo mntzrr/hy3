@@ -121,6 +121,7 @@ alive() { kill -0 "$(cat "${TMPDIR:-/tmp}/hy3-nested/pid")" 2>/dev/null && echo 
 # Composite readers, so a two-window assertion can be polled as one value.
 where2() { echo "$(where "$1") $(where "$2")"; }
 ws2() { echo "$(ws_of "$1") $(ws_of "$2")"; }
+floating2() { echo "$(is_floating "$1") $(is_floating "$2")"; }
 
 # "same", or both values so a failure still names them.
 geom_cmp() {
@@ -285,7 +286,14 @@ check_eventually "flag on: still on the scratchpad"       "special:t" active_ws
 
 echo
 echo "== hy3:togglefloating =="
+# The three toggles below only mean "unmount, float on, float off" if the first
+# one finds t_a on the scratchpad. If it does not, each one shifts by a step:
+# the block ends with t_a floating rather than tiled, both float assertions
+# fail, and t_a then stays floating for the rest of the run. Assert the
+# precondition so that goes wrong here, by name, instead of resurfacing later
+# as an unrelated-looking geometry failure.
 focus "$A"
+check_eventually "starts on the scratchpad"               "true"  on_special "$A"
 dispatch "hl.plugin.hy3.toggle_floating()" 0.5
 check_eventually "unmounts off the scratchpad"            "false" on_special "$A"
 check_eventually "focus follows the unmounted window"     "$A"    active_addr
@@ -363,20 +371,43 @@ width_of() { clients | jq -r --arg a "$1" '.[]|select(.address==$a)|.size[0]'; }
 
 # Reports the numbers on failure. This suite is the only oracle hy3 has - a bare
 # "expected true, got false" costs a whole rerun to find out which way it went.
+#
+# Floating is reported separately because it is not a narrower-or-wider
+# question at all: a floating window has a fixed size that no makegroup
+# touches, so it reads as "no wrapper appeared" while the actual fault is
+# somewhere else entirely. That is how this assertion once failed with
+# "width 800 vs baseline 800" - 800x600 is alacritty's floating default, and
+# the window under test had been left floating by an earlier section.
 narrower_than() { # narrower_than <addr> <baseline>
-	local w
+	local w f
 	w=$(width_of "$1")
-	if [ -n "$w" ] && [ "$w" -lt "$2" ] 2>/dev/null; then echo true
+	f=$(is_floating "$1")
+	if [ "$f" != false ]; then echo "false (window is floating=${f:-gone}, so its size is fixed)"
+	elif [ -n "$w" ] && [ "$w" -lt "$2" ] 2>/dev/null; then echo true
 	else echo "false (width ${w:-none} vs baseline $2)"; fi
 }
 
-focus "$A"
+# Fresh windows, not the ones the rest of the suite has been passing around.
+# This block used to measure t_a, forty-odd operations after it was spawned,
+# which made it the place where any earlier mistake surfaced - as a geometry
+# comparison that named neither the mistake nor the section it came from.
+#
+# Two windows, not one: makegroup on a workspace holding a single client is its
+# own upstream bug (#192), and this assertion is not about that.
+cleanup_windows
+spawn t_v || { echo "could not spawn t_v" >&2; exit 1; }
+spawn t_w || { echo "could not spawn t_w" >&2; exit 1; }
+V=$(addr_of t_v); W=$(addr_of t_w)
+[ -n "$V" ] && [ -n "$W" ] || { echo "could not spawn #296 windows" >&2; exit 1; }
+check_eventually "#296 starts from two tiled windows"       "false false" floating2 "$V" "$W"
+
+focus "$W"
 dispatch "hl.plugin.hy3.make_group('tab')" 0.5
 # stable, not a bare read: the wrap below is measured against these
-TAB_TOP=$(stable top_of "$A"); TAB_WIDTH=$(stable width_of "$A")
+TAB_TOP=$(stable top_of "$W"); TAB_WIDTH=$(stable width_of "$W")
 dispatch "hl.plugin.hy3.make_group('h')" 0.5
-check_eventually "#296 tab bar survives the wrap"           "$TAB_TOP" top_of "$A"
-check_eventually "#296 a wrapper group was created"         "true"     narrower_than "$A" "$TAB_WIDTH"
+check_eventually "#296 tab bar survives the wrap"           "$TAB_TOP" top_of "$W"
+check_eventually "#296 a wrapper group was created"         "true"     narrower_than "$W" "$TAB_WIDTH"
 dispatch "hl.plugin.hy3.change_focus('raise')" 0.3
 dispatch "hl.plugin.hy3.change_group('untab')" 0.4
 dispatch "hl.plugin.hy3.change_focus('lower')" 0.3
