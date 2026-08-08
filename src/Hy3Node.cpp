@@ -215,6 +215,23 @@ PHLWINDOW Hy3Node::as_window() {
 	return this->as_target()->window();
 }
 
+// fork: as_target() throws on a non-target node and on an expired target. That
+// is fine where the caller has already established both, but the node tree is
+// walked from paths that must not throw - hyprland unwinds through
+// CWindow::unmapWindow and PLUGIN_EXIT, neither of which catches, so an escaping
+// exception is std::terminate. These are the accessors for those paths.
+SP<Layout::ITarget> Hy3Node::try_target() {
+	auto* tn = dynamic_cast<Hy3TargetNode*>(this);
+	if (!tn) return nullptr;
+	return tn->target.lock();
+}
+
+PHLWINDOW Hy3Node::try_window() {
+	auto target = this->try_target();
+	if (!target) return nullptr;
+	return target->window();
+}
+
 UP<Hy3Node> Hy3Node::create(SP<Layout::ITarget> target) {
 	auto up = makeUnique<Hy3TargetNode>();
 	up->target = target;
@@ -239,7 +256,8 @@ void Hy3Node::focus(bool warp, Desktop::eFocusReason reason) {
 
 	switch (this->type()) {
 	case Hy3NodeType::Target: {
-		auto window = this->as_window();
+		auto window = this->try_window();
+		if (!window) break; // fork: focusing a node whose window is gone is a no-op, not a throw
 		window->setHidden(false);
 		Desktop::focusState()->fullWindowFocus(window, reason);
 		// hy3's own box, not m_reportedPosition: hyprland publishes that
@@ -345,10 +363,17 @@ void Hy3Node::recalcSizePosRecursive(CBox offsets, bool no_animation) {
 
 	// Keep in sync with WindowTarget::updatePos
 	if (this->is_target()) {
-		this->as_window()->setHidden(this->hidden);
-		this->as_target()->setPositionGlobal({.logicalBox = this->logicalBox, .visualBox = this->visualBox});
+		// fork: this runs on every geometry pass, including ones kicked off while a
+		// window is being torn down. as_window() returned null there and was
+		// dereferenced anyway - a SIGSEGV with this frame on top is what upstream
+		// #241 reports. The target itself can also be expired, which threw.
+		auto target = this->try_target();
+		if (!target) return;
+
+		if (auto window = target->window()) window->setHidden(this->hidden);
+		target->setPositionGlobal({.logicalBox = this->logicalBox, .visualBox = this->visualBox});
 		// warp on hidden fixes bounding boxes for the tab click handler
-		if (no_animation || this->hidden) this->as_target()->warpPositionSize();
+		if (no_animation || this->hidden) target->warpPositionSize();
 		return;
 	}
 
@@ -536,7 +561,7 @@ void Hy3Node::updateTabBarRecursive() {
 void Hy3Node::updateDecos() {
 	switch (this->type()) {
 	case Hy3NodeType::Target:
-		this->as_window()->updateDecorationValues();
+		if (auto window = this->try_window()) window->updateDecorationValues();
 		break;
 	case Hy3NodeType::Group:
 		for (auto& child: this->as_group().children) {
@@ -549,7 +574,10 @@ void Hy3Node::updateDecos() {
 
 std::string Hy3Node::getTitle() {
 	switch (this->type()) {
-	case Hy3NodeType::Target: return this->as_window()->m_title;
+	case Hy3NodeType::Target: {
+		auto window = this->try_window();
+		return window ? window->m_title : std::string();
+	}
 	case Hy3NodeType::Group:
 		std::string title;
 		auto& group = this->as_group();
@@ -625,9 +653,7 @@ std::generator<CWindow&> Hy3Node::windows(bool visibleOnly) {
 		// exception leaving PLUGIN_EXIT is std::terminate, i.e. it takes the
 		// compositor down, which is the failure this whole teardown path exists
 		// to avoid.
-		if (!this->valid()) co_return;
-
-		auto window = this->as_window();
+		auto window = this->try_window();
 		if (!window) co_return;
 
 		co_yield *window;
@@ -658,7 +684,7 @@ std::string Hy3Node::debugNode() {
 	std::string addr = "0x" + std::to_string((size_t) this);
 	switch (this->type()) {
 	case Hy3NodeType::Target:
-		buf << "window(" << this << " of " << this->parent.get() << ") [hypr " << this->as_window().get() << "] size ratio: " << this->size_ratio;
+		buf << "window(" << this << " of " << this->parent.get() << ") [hypr " << this->try_window().get() << "] size ratio: " << this->size_ratio;
 		break;
 	case Hy3NodeType::Group:
 		buf << "group(" << this << " of " << this->parent.get() << ") [";

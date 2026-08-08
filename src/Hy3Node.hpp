@@ -69,6 +69,13 @@ struct Hy3Node {
 	SP<Layout::ITarget> as_target();
 	PHLWINDOW as_window();
 
+	// fork: non-throwing counterparts of as_target()/as_window(). Both return
+	// null rather than throwing for a non-target node, an expired target, or a
+	// target whose window is already gone. Use these anywhere the node tree is
+	// walked or unwound - see the note on as_target() in Hy3Node.cpp.
+	SP<Layout::ITarget> try_target();
+	PHLWINDOW try_window();
+
 	bool operator==(const Hy3Node&) const;
 	bool is_root();
 	bool is_root_group();

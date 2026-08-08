@@ -914,7 +914,11 @@ std::optional<CBox> Hy3TabPassElement::boundingBox() { return this->group->getRe
 
 void findOverlappingWindows(Hy3Node& node, float height, std::vector<PHLWINDOWREF>& windows) {
 	switch (node.type()) {
-	case Hy3NodeType::Target: windows.push_back(node.as_window()); break;
+	// fork: try_window() - runs from the render path, and a null window must not be
+	// pushed as a live ref for the blur/overlap check to dereference later
+	case Hy3NodeType::Target:
+		if (auto window = node.try_window()) windows.push_back(window);
+		break;
 	case Hy3NodeType::Group:
 		auto& group = node.as_group();
 

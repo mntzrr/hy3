@@ -190,11 +190,16 @@ next keybind acts on a different window.
 
 ## Fixes to upstream bugs, carried here
 
-Bugs in upstream code, found and fixed in this fork. **Deliberately not reported upstream**,
-so nothing will ever make them disappear on rebase — unlike the backports above, which drop
-out once upstream merges them. Each is a permanent edit inside an upstream function and will
-conflict whenever upstream touches the same code. On a conflict the fork's side is the one
-to keep, unless upstream has independently fixed the same thing.
+Bugs in upstream code, found and fixed in this fork. All but one are **deliberately not
+reported upstream**, so nothing will ever make them disappear on rebase — unlike the backports
+above, which drop out once upstream merges them. Each is a permanent edit inside an upstream
+function and will conflict whenever upstream touches the same code. On a conflict the fork's
+side is the one to keep, unless upstream has independently fixed the same thing.
+
+The exception is the guard sweep, which fixes an upstream issue that *is* reported (#332).
+No PR exists for it, so it does not drop out on rebase either — but upstream is likely to fix
+it eventually, and probably differently (see the note on #329 above, which is the other
+proposed shape of the same fix). Check it before each rebase.
 
 They are listed here because `git log` is the only other record: a future conflict in
 `focusMonitor` or `insertNode` gives no clue whether that hunk is a fork feature, a backport
@@ -218,11 +223,51 @@ commit whatever its hash has become.
 | `617a457` | an empty-but-live root was destroyed and rebuilt, because `getWorkspaceRootGroup` returns null for both "no root" and "empty root" | `Hy3Layout::insertNode` |
 | `46913ef` | `hy3:togglefocuslayer` was the only warping dispatcher that ignored `cursor:no_warps` | `dispatch_togglefocuslayer` |
 | `696fc23` | a `hy3_log` call with printf conversions into a `std::format` sink, a doubled condition, a doubly-registered animation callback, a header/definition parameter name mismatch | `dispatch_focustab`, `warpCursor`, `Hy3TabBarEntry`, `TabGroup.hpp` |
+| *guard sweep* | every remaining unguarded `as_target()`/`as_window()`, `8761c3b` having covered only `windows()` — **upstream #332** and the backtrace attached to **#241**. See below | `try_target()`/`try_window()`, ten call sites |
 
-Three of these are worth re-checking against upstream before each rebase, because they are the
+Four of these are worth re-checking against upstream before each rebase, because they are the
 ones upstream is most likely to fix independently and in a different way: `97273d2`
 (`insertNode`'s ownership contract), `ed0d775` (the warp threading, which #311 also touches —
-see above), and `ec98a3b` (shader lifetime).
+see above), `ec98a3b` (shader lifetime), and the guard sweep (reported as #332, and #329 is a
+competing shape of the same fix).
+
+### The guard sweep
+
+`as_target()` throws for a non-target node, and throws again for a target whose weak pointer
+has expired; `as_window()` is `as_target()->window()`, so it throws for both and returns null
+for a third case, a live target whose window is already torn down. Callers dereferenced the
+result regardless. `8761c3b` fixed one site; this fixes the rest, by adding non-throwing
+`try_target()`/`try_window()` next to them and using those wherever the tree is walked or
+unwound.
+
+Two of the sites are the reported crashes:
+
+- **`findNodeFromTargetRecursive`** — walks *every* target in the tree looking for one, so
+  `as_target()` threw on the first expired node it passed, before reaching the node it was
+  asked for. It unwinds through `Layout::CAlgorithm::removeTarget` into `CWindow::unmapWindow`,
+  which does not catch: SIGABRT on window close, watchdog restart into safe mode. This is
+  **#332**, and the fork was carrying it.
+- **`recalcSizePosRecursive`** — `as_window()->setHidden()` with no null check, on a path that
+  runs during teardown. A SIGSEGV with this frame on top, called from `moveNodeToWorkspace`, is
+  the crash report attached to **#241**.
+
+The rest are the same pattern with a smaller blast radius: `removeTarget` (the node must still
+leave the tree when its window is gone — only the rule cleanup is skipped), `resizeTarget`
+(its `valid(window)` check was unreachable, the throw came first), `focus`, `updateDecos`,
+`getTitle`, `debugNode`, `findTiledWindowCandidate`, `getNextCandidate`, `shouldRenderSelected`
+and `findOverlappingWindows`.
+
+`getNodeFromTarget` also gained a null-argument guard, which the switch to `try_target()`
+makes load-bearing: a null needle would otherwise match the first expired node in the tree.
+
+**#332 is not reproduced by the suite.** The throw needs a node whose target expired without
+`removeTarget` ever running — stranded, then walked past by the next unmap. The only known way
+to strand one is `removeTarget`'s `if (g_suppressInsert) return`, which needs an unmap to land
+inside `moveNodeToWorkspace`'s `assignToSpace` loop; racing closes against that move did not
+hit it here in 12 rounds, and the reporter could not isolate a trigger either. The four
+assertions added under "fixes to upstream bugs" cover the observable half only and pass against
+a pre-fix build — sanity checks, like #298's and #304's, not regression tests. The guards are
+argued from the code path.
 
 Two findings from the same review were deliberately **not** acted on, and should stay that way:
 
@@ -247,7 +292,7 @@ plugin that owns every window is disruptive at best, and has crashed the composi
 
 ```sh
 test/nested.sh start 2   # nested Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 44 assertions covering everything below
+test/smoke.sh            # 48 assertions covering everything below
 test/nested.sh stop
 ```
 
@@ -255,6 +300,13 @@ test/nested.sh stop
 hand. `test/smoke.sh` discovers monitor names and ids rather than assuming them, and takes
 `HY3_TEST_TERM` (default `alacritty`) and `HY3_TEST_TIMEOUT` (default 6s, raise it on a
 loaded machine).
+
+One assertion is known to flake: **#296's "a wrapper group was created"** occasionally reports
+the wrapped width as equal to the baseline. `TAB_WIDTH` is sampled through `stable()`, but
+`stable()` only waits for two consecutive equal reads, which a slow relayout can satisfy while
+still mid-flight. Seen once in four runs. Re-run before treating it as a real failure — and if
+it is chased properly, the fix is to sample the baseline against a known-good geometry rather
+than against "stopped changing".
 
 The workarounds the harness is built around — why the extra monitors are nested Wayland
 outputs, why `hy3_log` is not an oracle, why the monitors must be edge to edge — are in

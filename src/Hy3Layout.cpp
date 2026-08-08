@@ -399,7 +399,11 @@ void Hy3Layout::removeTarget(SP<Layout::ITarget> target) {
 	auto* node = this->getNodeFromTarget(target);
 	if (node == nullptr) return;
 
-	auto window = node->as_window();
+	// fork: as_window() threw for an expired target and returned null for a window
+	// already torn down; both were then used unconditionally. This runs from
+	// CWindow::unmapWindow, so either one took the compositor down. The node still
+	// has to leave the tree in that case - only the window-side cleanup is skipped.
+	auto window = node->try_window();
 
 	hy3_log(
 	    LOG,
@@ -409,7 +413,10 @@ void Hy3Layout::removeTarget(SP<Layout::ITarget> target) {
 	    (uintptr_t) node->parent.get()
 	);
 
-	window->m_ruleApplicator->resetProps(Desktop::Rule::RULE_PROP_ALL, Desktop::Types::PRIORITY_LAYOUT);
+	if (window) {
+		window->m_ruleApplicator
+		    ->resetProps(Desktop::Rule::RULE_PROP_ALL, Desktop::Types::PRIORITY_LAYOUT);
+	}
 
 	auto* parent_node = node->parent.get();
 	// Extracted UP drops — node is destroyed.
@@ -492,7 +499,9 @@ void Hy3Layout::resizeTarget(const Vector2D& delta, SP<Layout::ITarget> target, 
 	auto* node = target ? this->getNodeFromTarget(target) : nullptr;
 	if (node == nullptr) return;
 
-	auto window = node->as_window();
+	// fork: the valid() check below was already here, but as_window() threw before
+	// reaching it whenever the target itself had expired.
+	auto window = node->try_window();
 	if (!valid(window)) return;
 
 	node = &node->getExpandActor();
@@ -612,13 +621,15 @@ SP<Layout::ITarget> Hy3Layout::getNextCandidate(SP<Layout::ITarget> old) {
 
 	auto* node = this->getNodeFromWindow(candidate.get());
 	if (!node) return nullptr;
-	return node->as_target();
+	return node->try_target(); // fork: no candidate is better than a throw
 }
 
 PHLWINDOW Hy3Layout::findTiledWindowCandidate(const CWindow* from) {
 	auto* node = this->getWorkspaceFocusedNode(from->m_workspace.get(), true);
 	if (node != nullptr && node->is_target()) {
-		return node->as_window();
+		// fork: this is the focus-successor search run while a window is closing,
+		// so meeting an expired target here is ordinary, not exceptional
+		if (auto window = node->try_window()) return window;
 	}
 
 	return PHLWINDOW();
@@ -1679,7 +1690,8 @@ bool Hy3Layout::shouldRenderSelected(const CWindow* window) {
 	auto* focused = &root->getFocusedNode();
 
 	switch (focused->type()) {
-	case Hy3NodeType::Target: return focused->as_window().get() == window;
+	// fork: try_window() - this is called from the render path, per window per frame
+	case Hy3NodeType::Target: return focused->try_window().get() == window;
 	case Hy3NodeType::Group: {
 		auto* node = this->getNodeFromWindow(window);
 		if (node == nullptr) return false;
@@ -1716,7 +1728,12 @@ Hy3Node* Hy3Layout::getNodeFromWindow(const CWindow* window) {
 
 static Hy3Node* findNodeFromTargetRecursive(Hy3Node* node, SP<Layout::ITarget> target) {
 	if (!node) return nullptr;
-	if (node->is_target() && node->as_target() == target) {
+	// fork: try_target(), not as_target(). This walks *every* target in the tree
+	// looking for one, so as_target() threw on the first expired node it passed,
+	// before the search ever reached the node it was asked for. The throw unwinds
+	// through Layout::CAlgorithm::removeTarget into CWindow::unmapWindow, which
+	// does not catch: SIGABRT on window close, upstream #332.
+	if (node->is_target() && node->try_target() == target) {
 		return node;
 	}
 	if (node->is_group()) {
@@ -1729,6 +1746,9 @@ static Hy3Node* findNodeFromTargetRecursive(Hy3Node* node, SP<Layout::ITarget> t
 }
 
 Hy3Node* Hy3Layout::getNodeFromTarget(SP<Layout::ITarget> target) {
+	// fork: a null target must not be looked up. try_target() above is null for an
+	// expired node, so searching for null would return the first dead node found.
+	if (!target) return nullptr;
 	return findNodeFromTargetRecursive(this->root.get(), target);
 }
 

@@ -131,6 +131,7 @@ geom_cmp() {
 }
 
 is_floating() { clients | jq -r --arg a "$1" '.[]|select(.address==$a)|.floating|tostring'; }
+titled_count() { clients | jq -r --arg p "$1" '[.[]|select(.title|startswith($p))]|length'; }
 on_special() { clients | jq -r --arg a "$1" '.[]|select(.address==$a)|.workspace.name|startswith("special:")|tostring'; }
 
 # is the cursor inside the given window's box?
@@ -379,6 +380,61 @@ check_eventually "#296 a wrapper group was created"         "true"     narrower_
 dispatch "hl.plugin.hy3.change_focus('raise')" 0.3
 dispatch "hl.plugin.hy3.change_group('untab')" 0.4
 dispatch "hl.plugin.hy3.change_focus('lower')" 0.3
+
+echo
+echo "== fixes to upstream bugs =="
+
+# #332: getNodeFromTarget walks *every* target in the tree looking for one, and
+# it dereferenced each with as_target(), which throws on an expired weak
+# pointer. So one dead target anywhere in the tree threw before the search ever
+# reached the node it was asked for. removeTarget is called from
+# CWindow::unmapWindow, which does not catch: SIGABRT on window close, and the
+# watchdog restarts the compositor in safe mode with no plugins.
+#
+# These assertions do NOT reproduce the crash - they pass against a pre-fix
+# build, so they are sanity checks, not regression tests. Read them that way.
+#
+# The throw needs a *stranded* node: one whose target expired without hy3's
+# removeTarget ever running, left in the tree for the next unmap to walk past.
+# A batched close does not produce one - the compositor still drains the unmaps
+# one at a time, and each takes its own node out. The known way to strand a node
+# is removeTarget's `if (g_suppressInsert) return`, which needs an unmap to land
+# inside moveNodeToWorkspace's assignToSpace loop; racing closes against that
+# move over 12 rounds never hit it here. The reporter could not isolate a
+# trigger either, and saw it twice rather than reliably.
+#
+# What is covered is the observable half - a tab group's windows all unmapping
+# in one batch does not take the compositor down and does not leave the tree
+# holding stale nodes. The guards themselves are argued from the code path, not
+# from these assertions.
+cleanup_windows
+for t in t_x t_y t_z; do
+	spawn "$t" || { echo "could not spawn $t" >&2; exit 1; }
+done
+X=$(addr_of t_x); Y=$(addr_of t_y); Z=$(addr_of t_z)
+[ -n "$X" ] && [ -n "$Y" ] && [ -n "$Z" ] || { echo "could not spawn unmap windows" >&2; exit 1; }
+
+focus "$X"
+dispatch "hl.plugin.hy3.make_group('tab')" 0.4
+for a in "$Y" "$Z"; do
+	focus "$a"
+	dispatch "hl.plugin.hy3.move_window('l')" 0.4
+done
+check_eventually "#332 three windows tabbed together"     "same" geom_cmp "$X" "$Z"
+
+# Not `dispatch`, which sleeps after each one - these have to overlap.
+for a in "$X" "$Y" "$Z"; do
+	ctl dispatch "hl.dsp.window.close({ window = 'address:'..'$a' })" >/dev/null 2>&1
+done
+check_eventually "#332 batched unmap removed every window" "0"   titled_count t_
+check "#332 instance survived a batched unmap"             "yes" "$(alive)"
+
+# A tree left holding a stale node is the other half of the failure: the
+# compositor stays up but the next insert lands in a corrupt tree. Spawning
+# into the emptied workspace is the cheapest check that it is really empty.
+spawn t_x || { echo "could not respawn t_x after the unmap batch" >&2; exit 1; }
+X=$(addr_of t_x)
+check_eventually "#332 layout still tiles after the unmap" "$M0" where "$X"
 
 echo
 echo "== teardown =="
