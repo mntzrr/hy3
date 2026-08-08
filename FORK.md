@@ -139,6 +139,17 @@ series keeps working**. Check each against `upstream/master` before a rebase.
 | [#296](https://github.com/outfoxxed/hy3/pull/296) | windows escaping tab groups on `hy3:movewindow`; `wrap`/collapse ignoring tab parents | no |
 | [#298](https://github.com/outfoxxed/hy3/pull/298) | tab highlight not refreshed on monitor focus change | yes — `State::monitorState()->monitors()`, and teardown wired into `PLUGIN_EXIT` |
 
+| [#328](https://github.com/outfoxxed/hy3/pull/328) | `<lua.h>` located by luck rather than by cmake — the build only works where the distribution installs it directly in `/usr/include` | yes — include dirs only, see below |
+
+**#328 is taken headers-only.** `src/dispatchers.cpp` includes hyprland's lua binding headers,
+`hyprland.pc` says nothing about lua, and Arch happens to put `lua.h` in `/usr/include`; a
+distribution that puts it under `/usr/include/lua5.4` does not build. `find_package(Lua)` fixes
+that. Upstream's PR also adds `target_link_libraries(hy3 PRIVATE Lua::Lua)`, which is **not**
+taken: hy3 resolves lua symbols from hyprland at load time — that is why it has always linked
+with no lua on the command line — and a `DT_NEEDED` on a liblua that need not be the one
+hyprland itself uses is a new failure mode for nothing. `readelf -d build/libhy3.so` should
+list no lua after a rebase resolves a conflict here.
+
 Two interactions worth knowing:
 
 - **#300 and `refocusMonitor()` overlap.** Both refocus the origin's remaining hy3 node, and
