@@ -42,6 +42,18 @@ CLEANED=$(
 # Vendor names, matched as words so "gpt" cannot hit inside an identifier.
 VENDORS='claude|anthropic|copilot|chatgpt|openai|gpt-[0-9]|gemini|cursor|codeium|windsurf|devin|aider|tabnine|codex'
 
+# The same list minus the ones that are also ordinary words in this codebase,
+# for the freeform scan in check 4.
+#
+# "cursor" is the whole problem: hy3 has a config key named cursor:no_warps,
+# three functions with it in their name, and a feature whose entire subject is
+# where the pointer ends up. Every honest commit about warping tripped check 4
+# and had to be waved through with --no-verify, which is how a hook stops being
+# read at all. It stays in checks 1-3, where the surrounding trailer is what
+# makes it an attribution: a tool naming itself does so in a trailer or a
+# footer, never as a passing noun in a sentence about the mouse.
+VENDORS_FREEFORM='claude|anthropic|copilot|chatgpt|openai|gpt-[0-9]|gemini|codeium|windsurf|devin|aider|tabnine|codex'
+
 fail() {
 	printf '\n commit rejected: %s\n\n' "$1" >&2
 	printf '   %s\n\n' "$2" >&2
@@ -72,7 +84,7 @@ offender=$(printf '%s\n' "$CLEANED" | grep -iE 'generated (with|by)[[:space:]]' 
 # 4. A vendor named anywhere else in the subject or body. This is the one that
 #    can misfire - on a commit *about* the policy - which is what --no-verify is
 #    for. Reporting the line makes a false positive obvious at a glance.
-offender=$(printf '%s\n' "$CLEANED" | grep -inE "$VENDORS" | head -1)
+offender=$(printf '%s\n' "$CLEANED" | grep -inE "$VENDORS_FREEFORM" | head -1)
 [ -n "$offender" ] && fail "assistant named in the message" "$offender"
 
 exit 0
