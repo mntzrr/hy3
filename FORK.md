@@ -490,7 +490,7 @@ plugin that owns every window is disruptive at best, and has crashed the composi
 
 ```sh
 test/nested.sh start 2   # nested Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 85 assertions covering everything below
+test/smoke.sh            # 88 assertions covering everything below
 test/nested.sh stop
 ```
 

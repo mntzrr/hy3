@@ -60,7 +60,7 @@ Use the throwaway instance instead:
 
 ```sh
 test/nested.sh start 2   # throwaway Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 85 assertions over the fork's behaviour
+test/smoke.sh            # 88 assertions over the fork's behaviour
 test/nested.sh stop
 ```
 
@@ -141,6 +141,25 @@ from a hand-run check.
   downstream blocks to mon1 and failed five assertions, none of which mentioned the cursor.
   Every block in `test/smoke.sh` that spawns now calls `pin_mon0` first rather than inheriting
   where the previous block left things. Do the same in a hand-run check.
+- **`setflag` is not synchronous, and `jq`'s `//` lies about `false`.** `hl.config` returning
+  is not the config having been applied; a dispatch fired too soon after runs under the *old*
+  value, which looks exactly like the feature under test not working. `test/smoke.sh` now waits
+  on `hyprctl getoption <key> -j` instead of a sleep — and reads it as
+  `if has("bool") then (.bool|tostring) else empty end`, because `.bool // empty` treats a
+  flag set to `false` as absent and waits forever. This produced a *different* single failure
+  on each of four runs before it was found.
+- **`cleanup_windows` only closes `t_*`.** Probe windows spawned by hand under any other name
+  stay in the tree for the rest of the session and poison every geometry block after them. The
+  symptom is a spread of unrelated failures whose values are *equal* to their baselines
+  ("width 1268 vs baseline 1268") — nothing changed, because the tree was not what the block
+  thought it was. Name hand-spawned windows `t_*`, or stop the instance afterwards.
+- **A Hyprland upgrade mid-session breaks the nested instance, not your session.** The running
+  compositor keeps the old version, but `nested.sh` starts the *new* binary from disk, and a
+  build carrying the old headers' hash refuses to load into it: `plugin crashed/threw in main:
+  target hyprland version mismatch`. `start()` then aborts, leaving an instance up with **no
+  plugin loaded** — every `plugin:hy3:*` key reads `no such option` and the suite tests
+  nothing. `rm -rf build` and rebuild. Do not redirect `start`'s stderr, which is how this was
+  missed for two runs.
 - **Establish the baseline before believing a failure is yours.** Those four failures looked
   like a regression in the code under test; `git stash && cmake --build build` and a rerun
   showed the pre-change tree passing every assertion, which pointed straight at the harness

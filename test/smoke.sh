@@ -109,7 +109,21 @@ focused_mon() { ctl monitors -j | jq -r '.[]|select(.focused)|.name'; }
 active_mon() { ctl activewindow -j | jq -r 'if .monitor == null then "none" else "mon\(.monitor)" end'; }
 active_addr() { ctl activewindow -j | jq -r .address; }
 active_ws() { ctl activewindow -j | jq -r .workspace.name; }
-setflag() { ctl eval "hl.config({ plugin = { hy3 = { $1 = $2 } } })" >/dev/null 2>&1; sleep 0.3; }
+# Set a plugin flag and wait for it to actually be live. The eval returning is
+# not the same as the config reload having applied: a dispatch fired too soon
+# after it runs under the *old* value, which is indistinguishable from the
+# feature under test not working. hyprctl getoption reads it back, so wait on
+# that rather than on a sleep.
+setflag() { # setflag <key> <true|false>
+	ctl eval "hl.config({ plugin = { hy3 = { $1 = $2 } } })" >/dev/null 2>&1
+	local deadline=$((SECONDS + TIMEOUT))
+	# `.bool // empty` would be wrong here: jq's // treats false as absent, so a
+	# flag being set to false would never look applied.
+	while [ "$(ctl getoption "plugin:hy3:$1" -j 2>/dev/null | jq -r 'if has("bool") then (.bool|tostring) else empty end')" != "$2" ]; do
+		[ "$SECONDS" -ge "$deadline" ] && { echo "  setflag: $1=$2 never applied" >&2; return 1; }
+		sleep 0.1
+	done
+}
 
 focus() {
 	dispatch "hl.dsp.focus({ window = 'address:$1' })"
@@ -617,6 +631,18 @@ focus "$FL"
 dispatch "hl.plugin.hy3.toggle_floating()" 0.5
 check_eventually "the moved window is floating"          "true" is_floating "$FL"
 
+# Floating a tiled window keeps its geometry, so the tiled neighbour expands
+# into the space it used to share. A pointer sitting in that half now hovers
+# the *tiled* window, and with input:follow_mouse the next layout change hands
+# focus to it - at which point every assertion below silently tests the tiled
+# path instead. Park the pointer inside the floating window and say so, rather
+# than inheriting wherever the previous block left it. This block failed
+# intermittently exactly that way, reporting the two tiled windows swapping.
+focus "$FL"
+dispatch "hl.plugin.hy3.warp_cursor()" 0.4
+check_eventually "the pointer is inside the floating window" "true" cursor_in "$FL"
+check_eventually "the floating window holds focus"       "$FL"  active_addr
+
 # The tiled neighbours take the whole workspace once the other window floats -
 # sample their geometry only after that has settled, or the baseline is the
 # three-window one and every comparison against it is meaningless.
@@ -688,6 +714,12 @@ focus "$K"
 dispatch "hl.plugin.hy3.toggle_floating()" 0.5
 check_eventually "the focused window is floating"        "true" is_floating "$K"
 
+# Same pointer trap as the block above: if focus slips to a tiled window the
+# guard under test is never reached and every assertion here passes vacuously.
+focus "$K"
+dispatch "hl.plugin.hy3.warp_cursor()" 0.4
+check_eventually "the floating window holds focus"       "$K"  active_addr
+
 TILED=$(stable tiled_geoms "$P" "$Q")
 TOP=$(top_of "$P")
 dispatch "hl.plugin.hy3.make_group('tab')" 0.5
@@ -714,6 +746,12 @@ echo "== #327 window tags =="
 # flat again, or the "on" phase inherits tags it never set.
 tags_of() { clients | jq -r --arg a "$1" '.[]|select(.address==$a)|.tags|sort|join(",")'; }
 
+# The flag comes off *before* the windows are spawned, not after: tags are
+# applied as the tree is built, so a spawn under a flag left on by an earlier
+# run arrives pre-tagged and the "off" assertions fail against tags this block
+# never asked for. That is a real ordering trap, hit while writing this.
+setflag tag_windows false
+
 pin_mon0
 cleanup_windows
 spawn t_l || { echo "could not spawn t_l" >&2; exit 1; }
@@ -721,7 +759,6 @@ spawn t_m || { echo "could not spawn t_m" >&2; exit 1; }
 L=$(addr_of t_l); M=$(addr_of t_m)
 [ -n "$L" ] && [ -n "$M" ] || { echo "could not spawn the tag windows" >&2; exit 1; }
 
-setflag tag_windows false
 focus "$M"
 dispatch "hl.plugin.hy3.make_group('tab')" 0.5
 check "off: tagging is a true no-op"                     "" "$(tags_of "$M")"
@@ -737,6 +774,7 @@ check_eventually "untabbing drops only hy3_tabbed"       "hy3_grouped" tags_of "
 dispatch "hl.plugin.hy3.make_group('h',{toggle=true})" 0.5
 check_eventually "dissolving the group clears both"      "" tags_of "$M"
 check "instance survived the tag syncing"                "yes" "$(alive)"
+setflag tag_windows false
 
 echo
 echo "== teardown =="
