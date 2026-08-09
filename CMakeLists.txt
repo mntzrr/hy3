@@ -11,7 +11,17 @@ if(CMAKE_EXPORT_COMPILE_COMMANDS)
 endif()
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(DEPS REQUIRED hyprland pixman-1 libdrm pango pangocairo libinput wayland-client xkbcommon)
+# glesv2 is the same class of dependency as Lua below: src/render.cpp,
+# src/shaders.cpp and src/TabGroup.cpp include <GLES2/gl2.h>, and nothing in
+# hyprland.pc asks for it - its Requires names egl and cairo, not glesv2. The
+# header was found only because mesa installs it under /usr/include, i.e. by
+# luck rather than by cmake. Upstream #318 reports the same for glslang.
+#
+# Headers only, deliberately, and for the same reason as Lua: there is no
+# target_link_libraries here at all. Every GL symbol is resolved from hyprland
+# at load time, and linking libGLESv2 would add a DT_NEEDED on an
+# implementation that need not be the one hyprland itself uses.
+pkg_check_modules(DEPS REQUIRED hyprland pixman-1 libdrm pango pangocairo libinput wayland-client xkbcommon glesv2)
 
 # src/dispatchers.cpp includes hyprland's lua binding headers, which include
 # <lua.h>. Nothing in hyprland.pc points at it, so this only ever built where
