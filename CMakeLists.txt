@@ -2,7 +2,23 @@ cmake_minimum_required(VERSION 3.19)
 project(Hy3 VERSION "0.1")
 set(CMAKE_CXX_STANDARD 23)
 add_compile_definitions(WLR_USE_UNSTABLE)
-add_compile_options(-Wall -Wextra -Wno-unused-parameter -Wno-unused-value -Wno-missing-field-initializers -Wno-narrowing -Wno-pointer-arith)
+# fork: these were -Wall -Wextra with five blanket -Wno- flags. Measured, four of
+# them were hiding nothing of ours: -Wunused-value and -Wpointer-arith fired zero
+# times, -Wnarrowing fired three (all fixed, two int->double box fields and a
+# long->int rounding radius), and of -Wunused-parameter's 83, seventy-five came
+# from hyprland's own headers.
+#
+# Header noise is what SYSTEM on the hyprland include directories below is for,
+# rather than turning the diagnostic off for our code too. -Wunused-parameter in
+# particular pays for itself: it is what catches a parameter going dead, which is
+# how `from` in findTiledWindowCandidate was found after the workspace arguments
+# were dropped.
+#
+# -Wmissing-field-initializers stays, and only that. 203 of its 208 were
+# hyprland's ColorManagement.hpp and are gone with SYSTEM, but the remaining five
+# are one deliberate C++20 designated initializer - `{ .a = opacity }` - which is
+# exactly the construct the warning cannot tell from an accident.
+add_compile_options(-Wall -Wextra -Wno-missing-field-initializers)
 
 # nix workaround
 if(CMAKE_EXPORT_COMPILE_COMMANDS)
@@ -93,6 +109,6 @@ if (HY3_NO_VERSION_CHECK)
 	target_compile_definitions(hy3 PRIVATE -DHY3_NO_VERSION_CHECK=TRUE)
 endif()
 
-target_include_directories(hy3 PRIVATE ${DEPS_INCLUDE_DIRS} ${LUA_INCLUDE_DIRS})
+target_include_directories(hy3 SYSTEM PRIVATE ${DEPS_INCLUDE_DIRS} ${LUA_INCLUDE_DIRS})
 
 install(TARGETS hy3 LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})

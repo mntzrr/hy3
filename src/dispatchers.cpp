@@ -425,7 +425,7 @@ static int luaWarpCursor(lua_State* L) {
 	static constexpr const char* FN = "hl.plugin.hy3.warp_cursor";
 	luaCheckArgCount(L, FN, 0, 0);
 
-	auto dspWarpCursor = [](lua_State* L) -> int {
+	auto dspWarpCursor = [](lua_State*) -> int {
 		warpCursor();
 		return 0;
 	};
@@ -434,7 +434,7 @@ static int luaWarpCursor(lua_State* L) {
 	return 1;
 }
 
-static SDispatchResult dispatch_warpcursor(std::string value) {
+static SDispatchResult dispatch_warpcursor(std::string) {
 	return warpCursor();
 }
 
@@ -797,7 +797,7 @@ static int luaKillActive(lua_State* L) {
 	static constexpr const char* FN = "hl.plugin.hy3.kill_active";
 	luaCheckArgCount(L, FN, 0, 0);
 
-	auto dspKillActive = [](lua_State* L) -> int {
+	auto dspKillActive = [](lua_State*) -> int {
 		killActive();
 		return 0;
 	};
@@ -806,7 +806,7 @@ static int luaKillActive(lua_State* L) {
 	return 1;
 }
 
-static SDispatchResult dispatch_killactive(std::string value) {
+static SDispatchResult dispatch_killactive(std::string) {
 	return killActive();
 }
 
@@ -985,7 +985,7 @@ static int luaDebugNodes(lua_State* L) {
 	static constexpr const char* FN = "hl.plugin.hy3.debug_nodes";
 	luaCheckArgCount(L, FN, 0, 0);
 
-	auto dspDebugNodes = [](lua_State* L) -> int {
+	auto dspDebugNodes = [](lua_State*) -> int {
 		debugNodes();
 		return 0;
 	};
@@ -994,7 +994,7 @@ static int luaDebugNodes(lua_State* L) {
 	return 1;
 }
 
-static SDispatchResult dispatch_debug(std::string arg) {
+static SDispatchResult dispatch_debug(std::string) {
 	return debugNodes();
 }
 

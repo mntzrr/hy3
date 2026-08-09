@@ -364,8 +364,8 @@ void Hy3TabBarEntry::renderText(float scale, CBox& box, float opacity) {
 	auto texture_box = CBox {
 	    box.x + x_offset + this->last_render.texture_x_offset,
 	    box.y + y_offset + this->last_render.texture_y_offset,
-	    this->last_render.texture_width,
-	    this->last_render.texture_height,
+	    static_cast<double>(this->last_render.texture_width),
+	    static_cast<double>(this->last_render.texture_height),
 	};
 
 	texture_box.round();
@@ -848,7 +848,7 @@ void Hy3TabGroup::renderTabBar() {
 			window_box.scale(scale);
 
 			if (window_box.width > 0 && window_box.height > 0)
-				Render::GL::g_pHyprOpenGL->renderRect(window_box, CHyprColor(0, 0, 0, 0), { .round = radius });
+				Render::GL::g_pHyprOpenGL->renderRect(window_box, CHyprColor(0, 0, 0, 0), { .round = static_cast<int>(radius) });
 		}
 
 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);

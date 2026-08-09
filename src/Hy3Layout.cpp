@@ -623,7 +623,7 @@ void Hy3Layout::swapTargets(SP<Layout::ITarget> a, SP<Layout::ITarget> b) {
 	}
 }
 
-void Hy3Layout::moveTargetInDirection(SP<Layout::ITarget> t, Math::eDirection dir, bool silent) {
+void Hy3Layout::moveTargetInDirection(SP<Layout::ITarget> t, Math::eDirection dir, bool /*silent*/) {
 	auto* node = t ? this->getNodeFromTarget(t) : nullptr;
 	if (node == nullptr) return;
 
@@ -757,7 +757,7 @@ SP<Layout::ITarget> Hy3Layout::getNextCandidate(SP<Layout::ITarget> old) {
 	auto window = old ? old->window() : nullptr;
 	if (!window) return nullptr;
 
-	auto candidate = this->findTiledWindowCandidate(window.get());
+	auto candidate = this->findTiledWindowCandidate();
 	if (!candidate) return nullptr;
 
 	auto* node = this->getNodeFromWindow(candidate.get());
@@ -765,7 +765,7 @@ SP<Layout::ITarget> Hy3Layout::getNextCandidate(SP<Layout::ITarget> old) {
 	return node->try_target(); // fork: no candidate is better than a throw
 }
 
-PHLWINDOW Hy3Layout::findTiledWindowCandidate(const CWindow* from) {
+PHLWINDOW Hy3Layout::findTiledWindowCandidate() {
 	auto* node = this->getWorkspaceFocusedNode(true);
 	if (node != nullptr && node->is_target()) {
 		// fork: this is the focus-successor search run while a window is closing,
@@ -1302,7 +1302,7 @@ void Hy3Layout::toggleFocusLayer(bool warp) {
 
 	PHLWINDOW target;
 	if (current_window->m_isFloating) {
-		target = this->findTiledWindowCandidate(current_window.get());
+		target = this->findTiledWindowCandidate();
 	} else {
 		target = this->findFloatingWindowCandidate(current_window.get());
 	}

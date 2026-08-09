@@ -108,7 +108,10 @@ public:
 	static std::string debugNodes();
 
 	bool shouldRenderSelected(const Desktop::View::CWindow*);
-	PHLWINDOW findTiledWindowCandidate(const Desktop::View::CWindow* from);
+	// fork: takes nothing. It answers "the focused tiled window of this layout",
+	// and an Hy3Layout is one space - unlike findFloatingWindowCandidate below,
+	// which really does search from a given window's workspace.
+	PHLWINDOW findTiledWindowCandidate();
 	PHLWINDOW findFloatingWindowCandidate(const Desktop::View::CWindow* from);
 
 	Hy3Node* getWorkspaceRootGroup();
