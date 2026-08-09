@@ -1695,9 +1695,30 @@ void Hy3Layout::expand(
     ExpandOption option,
     ExpandFullscreenOption fs_option
 ) {
+	// fork: `maximize` and `fullscreen` were accepted by both dispatchers and
+	// documented in the lua API, and both were an empty `break`. They need no
+	// node - they act on the focused window - and they have to run before the
+	// tiled-node lookup below, which bails for a floating or absent one.
+	//
+	// Toggling rather than setting, because these are keybind verbs and every
+	// comparable one in hyprland toggles. setFullscreenMode is the whole of the
+	// mechanism; no custom IFullscreenHandler is involved, hy3 uses the default
+	// one it inherits from IModeAlgorithm.
+	if (option == ExpandOption::Maximize || option == ExpandOption::Fullscreen) {
+		auto focused = Desktop::focusState()->window();
+		if (!focused) return;
+
+		auto mode = option == ExpandOption::Maximize ? Fullscreen::FSMODE_MAXIMIZED
+		                                             : Fullscreen::FSMODE_FULLSCREEN;
+
+		auto current = Fullscreen::controller()->getFullscreenModes(focused).internal;
+		Fullscreen::controller()
+		    ->setFullscreenMode(focused, current == mode ? Fullscreen::FSMODE_NONE : mode);
+		return;
+	}
+
 	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace, false, true);
 	if (node == nullptr) return;
-	PHLWINDOW window;
 
 	switch (option) {
 	case ExpandOption::Expand: {
@@ -1714,7 +1735,22 @@ void Hy3Layout::expand(
 
 		if (node->parent->is_root()) {
 			switch (fs_option) {
-			case ExpandFullscreenOption::MaximizeAsFullscreen: // goto fullscreen;
+			// fork: the `// goto fullscreen;` this replaces is upstream's record of
+			// what the option was for - an expand that has reached the workspace
+			// group has nowhere further to go, and under this option that last step
+			// becomes real fullscreen.
+			case ExpandFullscreenOption::MaximizeAsFullscreen: {
+				auto focused = Desktop::focusState()->window();
+				if (focused
+				    && !Fullscreen::controller()->isFullscreen(focused, Fullscreen::FSMODE_FULLSCREEN))
+					Fullscreen::controller()->setFullscreenMode(focused, Fullscreen::FSMODE_FULLSCREEN);
+				return;
+			}
+			// left as they were. `maximize_only` means "never escalate", so
+			// stopping is the whole behaviour. `intermediate_maximize` is the
+			// *default*, and what it should escalate to on a further press is not
+			// recorded anywhere - changing it would alter what every existing bind
+			// does, on a guess.
 			case ExpandFullscreenOption::MaximizeIntermediate:
 			case ExpandFullscreenOption::MaximizeOnly: return;
 			}
@@ -1740,7 +1776,8 @@ void Hy3Layout::expand(
 		}
 		break;
 	}
-	case ExpandOption::Maximize: break;
+	// handled above, before the node lookup
+	case ExpandOption::Maximize:
 	case ExpandOption::Fullscreen: break;
 	}
 

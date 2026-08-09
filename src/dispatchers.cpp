@@ -831,7 +831,14 @@ static std::optional<ExpandFullscreenOption> parseExpandFullscreenArg(std::strin
 }
 
 static SDispatchResult expand(ExpandOption expand, ExpandFullscreenOption fs_expand) {
-	auto* hy3 = hy3InstanceForAction();
+	// fork: the maximize/fullscreen options toggle, so they have to be reachable
+	// while the workspace already has a fullscreen window - otherwise
+	// workspace_for_action refuses and the bind that turned it on cannot turn it
+	// off. The tree-shaping options keep the old guard.
+	auto allow_fullscreen =
+	    expand == ExpandOption::Maximize || expand == ExpandOption::Fullscreen;
+
+	auto* hy3 = hy3InstanceForAction(allow_fullscreen);
 	if (!hy3) return SDispatchResult {};
 
 	hy3->expand(hy3->workspace().get(), expand, fs_expand);
