@@ -773,6 +773,28 @@ dispatch "hl.plugin.hy3.change_group('h')" 0.5
 check_eventually "untabbing drops only hy3_tabbed"       "hy3_grouped" tags_of "$M"
 dispatch "hl.plugin.hy3.make_group('h',{toggle=true})" 0.5
 check_eventually "dissolving the group clears both"      "" tags_of "$M"
+
+# Everything above asserts on the *tag*. None of it notices whether the
+# windowrules keyed on that tag are re-evaluated, which is the entire reason the
+# feature exists - a tag nobody acts on is invisible. Setting the tag and
+# re-running the rules are two separate steps in hyprland, and an implementation
+# can get the first right and drop the second silently.
+#
+# border_size is the observable: it is a dynamic rule, and on a tiled window it
+# comes out of the window's size inside an unchanged layout slot. Width rather
+# than height, because tabbing takes the bar off the top - the height would move
+# whether or not the rule fired, and the width only moves if it did.
+width_of() { clients | jq -r --arg a "$1" '.[]|select(.address==$a)|.size[0]'; }
+tagrule_narrower() { [ "$(width_of "$M")" -lt "$TAGRULE_BASE" ] 2>/dev/null && echo yes || echo no; }
+tagrule_restored() { [ "$(width_of "$M")" = "$TAGRULE_BASE" ] && echo yes || echo no; }
+
+ctl eval "hl.window_rule({ match = { tag = 'hy3_tabbed' }, border_size = 40 })" >/dev/null 2>&1
+TAGRULE_BASE=$(width_of "$M")
+dispatch "hl.plugin.hy3.make_group('tab')" 0.5
+check_eventually "a rule keyed on the tag takes effect"  "yes" tagrule_narrower
+dispatch "hl.plugin.hy3.make_group('tab',{toggle=true})" 0.5
+check_eventually "and is undone when the tag goes"       "yes" tagrule_restored
+
 check "instance survived the tag syncing"                "yes" "$(alive)"
 setflag tag_windows false
 

@@ -3,7 +3,7 @@
 #include <sstream>
 #include <stdexcept>
 
-#include <bits/ranges_util.h>
+#include <algorithm>
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/config/ConfigManager.hpp>
@@ -97,30 +97,44 @@ auto Hy3GroupNode::findChild(Hy3Node& child) -> std::list<UP<Hy3Node>>::iterator
 
 // Sets/unsets a static tag on `window`, addressed directly so it works
 // regardless of hidden/focus state.
-static void dispatchHy3Tag(PHLWINDOW window, const char* tag, bool add) {
-	auto args = std::format(
-	    "hl.dsp.window.tag({{ tag = \"{}{}\", window = \"address:0x{:x}\" }})",
-	    add ? '+' : '-',
-	    tag,
-	    (uintptr_t) window.get()
-	);
+//
+// Hyprland only re-evaluates windowrules on a tag change if the tag's
+// value actually moved (see CTagKeeper::applyTag), so re-syncing an
+// already-correctly-tagged window (e.g. the group's shape didn't change,
+// just which tab is visible) would otherwise be a silent no-op. Force a
+// real transition by toggling through the opposite state.
+//
+// fork: this went through HyprlandAPI::invokeHyprctlCommand("dispatch", ...)
+// with a formatted lua string - the command parser plus a lua evaluation per
+// call, and twice per tag because of the forced transition above, so four full
+// round trips per window for every insert, extract, replace, setLayout and
+// unhide. Relaying out a ten window tab group was forty lua evaluations.
+// CWindowRuleApplicator::m_tagKeeper is public and does the same thing
+// directly.
+//
+// The rule recheck that has to follow a tag change is *queued*, not run here,
+// and that is the whole difficulty. Running it inline re-enters the layout
+// while the tree is mid-mutation: collapsing a group ran it between
+// extractChildRaw and replaceChild, the half-collapsed shape recomputed the
+// tags, and the stale answer won - a dissolved group kept hy3_grouped forever.
+// The old hyprctl path did not have that problem because the dispatch machinery
+// deferred the work; going direct means deferring it deliberately. See
+// flushHy3TagRechecks in globals.hpp.
+static void applyHy3Tag(PHLWINDOW window, const char* tag, bool add) {
+	if (!window || !window->m_ruleApplicator) return;
 
 	try {
-		HyprlandAPI::invokeHyprctlCommand("dispatch", args);
-	} catch (std::exception& e) { hy3_log(ERR, "dispatchHy3Tag: {}", e.what()); } catch (...) {
-		hy3_log(ERR, "dispatchHy3Tag: unknown exception");
-	}
-}
+		auto& tags = window->m_ruleApplicator->m_tagKeeper;
 
-// Hyprland only re-evaluates windowrules on a tag change if the tag's
-// value actually moved (see CTagKeeper::applyTag / Actions::tag), so
-// re-syncing an already-correctly-tagged window (e.g. the group's shape
-// didn't change, just which tab is visible) would otherwise be a silent
-// no-op. Force a real transition by toggling through the opposite state.
-static void applyHy3Tag(PHLWINDOW window, const char* tag, bool add) {
-	if (!window) return;
-	dispatchHy3Tag(window, tag, !add);
-	dispatchHy3Tag(window, tag, add);
+		tags.applyTag(std::string(add ? "-" : "+") + tag);
+		if (!tags.applyTag(std::string(add ? "+" : "-") + tag)) return;
+
+		auto ref = window->m_self;
+		if (std::ranges::find(g_pendingTagRechecks, ref) == g_pendingTagRechecks.end())
+			g_pendingTagRechecks.push_back(ref);
+	} catch (std::exception& e) { hy3_log(ERR, "applyHy3Tag: {}", e.what()); } catch (...) {
+		hy3_log(ERR, "applyHy3Tag: unknown exception");
+	}
 }
 
 // Runs inside window insertion/removal, reached through Wayland protocol

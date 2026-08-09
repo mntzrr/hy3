@@ -123,6 +123,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 	});
 
 	g_tickListener = Event::bus()->m_events.tick.listen([]() {
+		// fork: from the event loop, so no hy3 tree operation is on the stack -
+		// which is the entire point, see applyHy3Tag in Hy3Node.cpp
+		flushHy3TagRechecks();
+
 		for (auto& wp: g_tabGroups) {
 			if (auto* tg = wp.get()) tg->tick();
 		}
@@ -196,4 +200,5 @@ APICALL EXPORT void PLUGIN_EXIT() {
 
 	g_tabGroups.clear();
 	g_destroyingTabGroups.clear();
+	g_pendingTagRechecks.clear();
 }
