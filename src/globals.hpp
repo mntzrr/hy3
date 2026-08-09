@@ -45,15 +45,21 @@ inline void flushHy3TagRechecks() {
 	auto pending = std::move(g_pendingTagRechecks);
 	g_pendingTagRechecks.clear();
 
-	// A tag change can affect any rule, and the rule engine offers no per-window
-	// entry point - only this. Once per tick regardless of how many windows were
-	// retagged, which is what makes it affordable; the old path paid a command
-	// parse and a lua evaluation per tag per window instead.
-	Desktop::Rule::ruleEngine()->updateAllRules();
-
+	// Per window, and told exactly what changed. This was
+	// ruleEngine()->updateAllRules() - correct, but it re-evaluates every rule on
+	// every window because one window's tag moved, and the rule engine has no
+	// narrower entry point to offer. The applicator does: RULE_PROP_TAG is the
+	// property that actually changed, so only the rules matching on tags get
+	// reconsidered, and only for the windows that were retagged.
+	//
+	// Not recheckStaticRules(), which was the first attempt and looks right:
+	// tags feed dynamic rules too - border_size among them - and that call leaves
+	// those alone, which is indistinguishable from working until a rule keyed on
+	// a tag quietly stops firing. The suite asserts on exactly that.
 	for (auto& ref: pending) {
 		auto window = ref.lock();
-		if (!window) continue;
+		if (!window || !window->m_ruleApplicator) continue;
+		window->m_ruleApplicator->propertiesChanged(Desktop::Rule::RULE_PROP_TAG);
 		window->updateDecorationValues();
 	}
 }
