@@ -1,7 +1,10 @@
 # fork: commit_pins map a hyprland commit to the hy3 commit hyprpm should check
-# out. Left in place so rebases onto upstream stay conflict free, but a pin that
+# out. Left unedited - originally to keep rebases onto upstream conflict free,
+# and now because editing it would buy nothing: the install below passes an
+# explicit revision, which makes hyprpm ignore the table outright. A pin that
 # matches the running hyprland would check out an *upstream* commit and silently
-# throw away this fork's commits. Install with an explicit revision so hyprpm
+# throw away this fork's commits, which is the reason for that revision and is
+# unaffected by how the table got here. Install with an explicit revision so hyprpm
 # ignores the locks entirely (note hyprpm labels the repo from the install path,
 # not from the authors below, so a local install shows up as its directory name):
 #

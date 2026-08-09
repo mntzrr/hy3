@@ -1,11 +1,13 @@
-# fork: upstream has no CI. This exists to catch the one failure a rebase onto
-# upstream/master produces silently - a tree that no longer compiles against the
-# pinned Hyprland - without needing a live session to find out.
+# fork: upstream has no CI. This exists to catch the one failure that arrives
+# silently - a tree that no longer compiles against the pinned Hyprland, whether
+# from a change here or from a commit cherry-picked off upstream - without
+# needing a live session to find out.
 #
 # It deliberately does NOT gate formatting. The tree does not match its own
 # .clang-format, much of which is clang-format version skew rather than real
-# drift, and reformatting a fork that rebases would conflict with every future
-# upstream commit. See the review notes before adding such a gate.
+# drift, and reformatting a tree that still takes commits from upstream would
+# conflict with every one of them. See the review notes before adding such a
+# gate.
 name: build
 
 on:

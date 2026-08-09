@@ -51,8 +51,9 @@ conflict, and for a commit that has to quote the policy itself.
 
 ## Commits
 
-- Prefix fork-only commits `fork:` so the series stays identifiable across rebases onto
-  upstream. `FORK.md` explains the conventions that keep those rebases conflict-free.
+- Prefix fork-only commits `fork:` so the series stays identifiable against anything taken
+  from upstream. `FORK.md` explains the conventions that keep those cherry-picks off fork
+  code.
 - Keep the subject in the imperative mood, and explain the *why* in the body when it is not
   obvious from the diff.
 

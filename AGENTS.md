@@ -52,7 +52,8 @@ cherry-picking anything near it.
   Assume your own defaults are wrong here: this rule was in context and still broken three
   times in one session, which is why the hook exists. A `Co-Authored-By:` naming a *person* is
   fine, and `--no-verify` is the way past for a replayed upstream commit.
-- Prefix fork commits `fork:` so the series is identifiable across rebases.
+- Prefix fork commits `fork:` so the series stays identifiable against anything taken from
+  upstream.
 - **Never push unless explicitly told to.** The remote is the user's own fork.
 - The user's Hyprland config is at `~/.config/hypr` (note: `hypr`, not `hyprland`), and it is
   **not** version controlled — back files up before editing, and never delete files you did
@@ -335,10 +336,10 @@ refuses to load on a hash mismatch. Compare `hyprctl version` with `GIT_COMMIT_H
 `/usr/include/hyprland/src/version.h`.
 
 `.github/workflows/build.yml` runs the same build over nix against the Hyprland pinned in
-`flake.lock`, which is the point of it: it catches a rebase that no longer compiles without
+`flake.lock`, which is the point of it: it catches a tree that no longer compiles without
 needing a session. It deliberately does **not** gate formatting — the tree does not match
-its own `.clang-format`, and reformatting a fork that rebases would conflict with every
-future upstream commit.
+its own `.clang-format`, and reformatting a tree that still takes commits from upstream would
+conflict with every one of them.
 
 ### Never add `-fvisibility=hidden`
 

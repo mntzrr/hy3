@@ -43,15 +43,16 @@ grep hash /var/cache/hyprpm/mntzr/hy3/state.toml   # must equal this repo's HEAD
 
 **The pin table is upstream's, and is never edited here.** It maps a hyprland commit to an
 *upstream hy3* commit, so a fork entry would be both useless — the install above passes a
-revision, which makes hyprpm ignore pins entirely — and a permanent conflict, since upstream
-appends to that table every release. Nothing about a new hyprland version calls for a change
-to `hyprpm.toml`.
+revision, which makes hyprpm ignore pins entirely — and a standing conflict with every
+upstream release, which appends to that table. That second reason was about rebases and now
+applies to cherry-picks instead; the first never depended on either. Nothing about a new
+hyprland version calls for a change to `hyprpm.toml`.
 
 Do not read a successful no-revision install as proof the trap is gone. It only means no pin
 *matched*: upstream's table currently stops at 0.56.0, so on 0.56.1 or later hyprpm falls
 through to the branch head, which for a local clone is this fork's HEAD. The trap re-arms the
-moment upstream adds a pin for the hyprland you are running and a rebase brings it in — which
-is why the revision is passed regardless, and why the `state.toml` check above is worth doing
+moment upstream adds a pin for the hyprland you are running and a cherry-pick brings it in —
+which is why the revision is passed regardless, and why the `state.toml` check above is worth doing
 every time.
 
 hyprpm elevates itself with `sudo`/`doas` for the parts that write under `/var/cache/hyprpm`,
@@ -60,14 +61,26 @@ so these need a terminal that can prompt.
 To pick up new fork commits: commit here, then `hyprpm update`, or re-run the `remove`/`add`
 pair with the new revision if the pinned rev needs to move.
 
-## Staying in sync
+## Taking changes from upstream
+
+This is **not** rebased onto upstream any more — see "Relationship to upstream" in
+`AGENTS.md`. Upstream is a source to take from, not a base to sit on:
 
 ```sh
 git fetch upstream
-git rebase upstream/master
+git log --oneline upstream/master
+git cherry-pick <chase commit>     # or hand-apply
 ```
 
-Fork commits are prefixed `fork:`. To minimise conflicts, changes follow these rules:
+What is worth taking is the release chasing: upstream tags `hl<version>` within a day or so of
+a Hyprland major, and that commit is usually the shortest description of what the new API
+wants. Its bug fixes are a different matter — nine of its open issues were fixed here instead
+of waited on.
+
+Fork commits are prefixed `fork:`. The rules below were written to keep *rebases* cheap and no
+longer bind — the tree has since diverged in the hot paths deliberately. They are still worth
+following for anything that does not need to diverge, because they are what keeps a cherry-pick
+from touching fork code at all:
 
 - new `CONF(...)` entries live in a `// fork additions` block at the end of the list in
   `src/main.cpp`, never interleaved with upstream's
@@ -79,10 +92,13 @@ Fork commits are prefixed `fork:`. To minimise conflicts, changes follow these r
 - extra parameters added to upstream signatures are trailing and defaulted, so upstream call
   sites are untouched
 
-Before a rebase, check the three tables below. They behave differently on one: the backports
-disappear cleanly once upstream merges them, the overlapping PRs conflict once upstream merges
-them, and the fixes to upstream bugs are carried forever because they were never reported.
-After a rebase, the checks worth re-running are listed under "Verifying".
+Before cherry-picking anything near them, check the three tables below. They used to behave
+differently under a rebase — the backports dropped out on their own once upstream merged them,
+the overlapping PRs conflicted, and the fixes to upstream bugs were carried forever because
+they were never reported. Only the last of those still holds automatically. **Nothing drops
+out on its own now**, so a backport whose PR upstream has merged will arrive a second time if
+you take the commit containing it. Afterwards, the checks worth re-running are listed under
+"Verifying".
 
 ## Features
 
@@ -209,7 +225,8 @@ feedback that the top was reached, so the overshoot is only visible after the fa
 Fixes that are open upstream but touch code this fork's features sit on top of. Each is a
 separate commit keeping its original author, subjected `fork: backport #NNN — …` and carrying
 an `Upstream-PR:` trailer, so that **when upstream merges one, `git rebase` drops it and the
-series keeps working**. Check each against `upstream/master` before a rebase.
+series keeps working** — which no longer happens on its own. Check each against
+`upstream/master` before cherry-picking anything near it, or it lands twice.
 
 | PR | Fixes | Adapted? |
 | --- | --- | --- |
