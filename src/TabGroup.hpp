@@ -121,9 +121,22 @@ private:
 	Hy3TabBar(const Hy3TabBar&) = delete;
 };
 
+// fork: weak, not a raw Hy3TabGroup*. The element is handed to hyprland's
+// render pass and drawn later, while the group it names is owned by a node in
+// an Hy3Layout tree - Hy3TabGroupWrapper::release() can retire one into
+// g_destroyingTabGroups and the tick listener can drop it from there, both
+// outside this element's control. A raw pointer made that a call into freed
+// memory from inside the compositor's render pass.
+//
+// Observed with get(), never lock(). Hy3TabGroup is held by a UP and self is a
+// weak pointer over it, and hyprutils asserts on locking one of those - there
+// is no shared ownership for a SP to take a share of. get() still goes null the
+// moment the UP dies, which is the whole of what this needs; pinning the group
+// for the duration of the draw is not on offer under unique ownership and is
+// not what protects the call.
 class Hy3TabPassElement: public IPassElement {
 public:
-	Hy3TabPassElement(Hy3TabGroup* group): group(group) {}
+	Hy3TabPassElement(WP<Hy3TabGroup> group): group(std::move(group)) {}
 
 	const char* passName() override { return "Hy3TabPassElement"; }
 	std::vector<UP<IPassElement>> draw() override;
@@ -133,7 +146,7 @@ public:
 	std::optional<CBox> boundingBox() override;
 
 private:
-	Hy3TabGroup* group;
+	WP<Hy3TabGroup> group;
 };
 
 class Hy3TabGroup {

@@ -112,7 +112,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 				    && std::find(rendered_groups.begin(), rendered_groups.end(), entry)
 				           == rendered_groups.end())
 				{
-					g_pHyprRenderer->m_renderPass.add(makeUnique<Hy3TabPassElement>(entry));
+					g_pHyprRenderer->m_renderPass.add(makeUnique<Hy3TabPassElement>(wp));
 					rendered_groups.push_back(entry);
 				}
 			}

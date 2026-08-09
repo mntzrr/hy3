@@ -902,7 +902,7 @@ void Hy3TabGroup::renderTabBar() {
 }
 
 std::vector<UP<IPassElement>> Hy3TabPassElement::draw() {
-	this->group->renderTabBar();
+	if (auto* group = this->group.get()) group->renderTabBar();
 	return {};
 }
 
@@ -932,7 +932,11 @@ bool Hy3TabPassElement::needsPrecomputeBlur() {
 	    || needsblur(col_border_inactive);
 }
 
-std::optional<CBox> Hy3TabPassElement::boundingBox() { return this->group->getRenderBB().first; }
+std::optional<CBox> Hy3TabPassElement::boundingBox() {
+	auto* group = this->group.get();
+	if (!group) return std::nullopt;
+	return group->getRenderBB().first;
+}
 
 static void findOverlappingWindows(Hy3Node& node, float height, std::vector<PHLWINDOWREF>& windows) {
 	switch (node.type()) {
