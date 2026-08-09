@@ -410,7 +410,7 @@ void Hy3Node::focus(bool warp, Desktop::eFocusReason reason) {
 	}
 }
 
-void markGroupFocusedRecursive(Hy3GroupNode& group) {
+static void markGroupFocusedRecursive(Hy3GroupNode& group) {
 	group.group_focused = true;
 	for (auto& child: group.children) {
 		if (child->is_group()) markGroupFocusedRecursive(child->as_group());
@@ -1041,7 +1041,7 @@ void Hy3Node::wrap(Hy3GroupLayout layout, GroupEphemeralityOption ephemeral, boo
 }
 
 
-Hy3Node* getOuterChild(Hy3GroupNode& group, ShiftDirection direction) {
+static Hy3Node* getOuterChild(Hy3GroupNode& group, ShiftDirection direction) {
 	switch (direction) {
 	case ShiftDirection::Left:
 	case ShiftDirection::Up: return group.children.front().get(); break;
@@ -1073,7 +1073,7 @@ Hy3Node* Hy3Node::getImmediateSibling(ShiftDirection direction) {
 }
 
 
-Axis getAxis(Hy3GroupLayout layout) {
+static Axis getAxis(Hy3GroupLayout layout) {
 	switch (layout) {
 	case Hy3GroupLayout::SplitH: return Axis::Horizontal;
 	case Hy3GroupLayout::SplitV: return Axis::Vertical;
@@ -1081,7 +1081,7 @@ Axis getAxis(Hy3GroupLayout layout) {
 	}
 }
 
-Axis getAxis(ShiftDirection direction) {
+static Axis getAxis(ShiftDirection direction) {
 	switch (direction) {
 	case ShiftDirection::Left:
 	case ShiftDirection::Right: return Axis::Horizontal;
@@ -1106,7 +1106,7 @@ Hy3Node* Hy3Node::findNeighbor(ShiftDirection direction) {
 	return nullptr;
 }
 
-int directionToIteratorIncrement(ShiftDirection direction) {
+static int directionToIteratorIncrement(ShiftDirection direction) {
 	switch (direction) {
 	case ShiftDirection::Left:
 	case ShiftDirection::Up: return -1;

@@ -60,7 +60,7 @@ PHLWORKSPACE workspace_for_action(bool allow_fullscreen) {
 	return workspace;
 }
 
-std::string operationWorkspaceForName(const std::string& workspace) {
+static std::string operationWorkspaceForName(const std::string& workspace) {
 	typedef std::string (*PHYPRSPLIT_GET_WORKSPACE_FN)(const std::string& workspace);
 
 	// Resolved per call, deliberately. Caching this in a static meant a
@@ -81,7 +81,7 @@ std::string operationWorkspaceForName(const std::string& workspace) {
 	return workspace;
 }
 
-Hy3Node* findTabBarAt(Hy3Node& node, Vector2D pos, Hy3Node** focused_node);
+static Hy3Node* findTabBarAt(Hy3Node& node, Vector2D pos, Hy3Node** focused_node);
 
 Hy3Layout::Hy3Layout() {
 	g_hy3Instances.insert(this);
@@ -485,7 +485,7 @@ void Hy3Layout::recalcGeometry(bool no_animation) {
 	}
 }
 
-ShiftDirection reverse(ShiftDirection direction) {
+static ShiftDirection reverse(ShiftDirection direction) {
 	switch (direction) {
 	case ShiftDirection::Left: return ShiftDirection::Right;
 	case ShiftDirection::Right: return ShiftDirection::Left;
@@ -1488,7 +1488,7 @@ bottom:
 	return;
 }
 
-Hy3Node* findTabBarAt(Hy3Node& node, Vector2D pos, Hy3Node** focused_node) {
+static Hy3Node* findTabBarAt(Hy3Node& node, Vector2D pos, Hy3Node** focused_node) {
 	// clang-format off
 	static const auto p_gaps_in = CConfigValue<Config::IComplexConfigValue>("general:gaps_in");
 	static const auto tab_bar_height = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:height");
@@ -1928,15 +1928,15 @@ Hy3Node* Hy3Layout::getNodeFromTarget(SP<Layout::ITarget> target) {
 	return findNodeFromTargetRecursive(this->root.get(), target);
 }
 
-bool shiftIsForward(ShiftDirection direction) {
+static bool shiftIsForward(ShiftDirection direction) {
 	return direction == ShiftDirection::Right || direction == ShiftDirection::Down;
 }
 
-bool shiftIsVertical(ShiftDirection direction) {
+static bool shiftIsVertical(ShiftDirection direction) {
 	return direction == ShiftDirection::Up || direction == ShiftDirection::Down;
 }
 
-bool shiftMatchesLayout(Hy3GroupLayout layout, ShiftDirection direction) {
+static bool shiftMatchesLayout(Hy3GroupLayout layout, ShiftDirection direction) {
 	if (layout == Hy3GroupLayout::Root) return false;
 	return (layout == Hy3GroupLayout::SplitV && shiftIsVertical(direction))
 	    || (layout != Hy3GroupLayout::SplitV && !shiftIsVertical(direction));

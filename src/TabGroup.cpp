@@ -37,7 +37,7 @@ using Desktop::View::IGeometric;
 
 // This is a workaround CHyprColor not having working arithmetic operator...
 template <typename... Args>
-CHyprColor merge_colors(Args... colors) {
+static CHyprColor merge_colors(Args... colors) {
 	auto merge_oklab = []<typename... Args2>(Args2... colors) {
 		return CColor::SOkLab {
 		    .l = ((colors.first * colors.second.l) + ...),
@@ -934,7 +934,7 @@ bool Hy3TabPassElement::needsPrecomputeBlur() {
 
 std::optional<CBox> Hy3TabPassElement::boundingBox() { return this->group->getRenderBB().first; }
 
-void findOverlappingWindows(Hy3Node& node, float height, std::vector<PHLWINDOWREF>& windows) {
+static void findOverlappingWindows(Hy3Node& node, float height, std::vector<PHLWINDOWREF>& windows) {
 	switch (node.type()) {
 	// fork: try_window() - runs from the render path, and a null window must not be
 	// pushed as a live ref for the blur/overlap check to dereference later

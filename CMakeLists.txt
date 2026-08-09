@@ -44,6 +44,28 @@ add_library(hy3 SHARED
 	src/render.cpp
 )
 
+# Do NOT add -fvisibility=hidden here. It builds and links cleanly, and it
+# takes the plugin from 926 exported symbols to 168, which looks like an
+# unambiguous win right up until the compositor segfaults.
+#
+# Hyprland hands its managers to plugins as inline variables in headers -
+# `inline UP<CPluginSystem> g_pPluginSystem;` in plugins/PluginSystem.hpp,
+# `inline UP<CCompositor> g_pCompositor;` in Compositor.hpp, and so on for
+# every one of them. An inline variable is emitted into each object that uses
+# it and relies on the dynamic linker unifying the copies at load time, which
+# only happens while they are visible. Hide them and hy3 gets its own
+# zero-initialised copy of every manager pointer: g_pPluginSystem drops from a
+# unique global to a local BSS symbol, and the first call through it - in this
+# case getAllPlugins() from moveNodeToWorkspace - dereferences an empty UP.
+#
+# The same goes for Log::logger, the vtables and typeinfo of hyprland classes
+# hy3 instantiates, and any function-local static inside a hyprland inline
+# function. There is no partial version of this that is safe.
+#
+# What is safe, and is what the file-local helpers in Hy3Layout.cpp,
+# Hy3Node.cpp and TabGroup.cpp are marked static for, is keeping hy3's *own*
+# symbols out of the table. Nothing outside the plugin references them.
+
 configure_file(src/tab.vert ${CMAKE_CURRENT_BINARY_DIR}/src/tab.vert COPYONLY)
 file(READ ${CMAKE_CURRENT_BINARY_DIR}/src/tab.vert SHADER_TAB_VERT)
 
