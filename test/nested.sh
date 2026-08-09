@@ -30,10 +30,18 @@ LOGFILE="$RUNDIR/hyprland.log"
 # drives - `hl.dsp.exit()` most of all - would land on the user's real session.
 # Captured now, before start() strips it from the child's environment.
 HOST_SIG=${HYPRLAND_INSTANCE_SIGNATURE:-}
+# Likewise the host's runtime dir, captured before the child gets its own.
+# host_ctl() and the wayland socket the nested backend connects to both live
+# here, and $XDG_RUNTIME_DIR stops meaning "the host's" the moment start() runs.
+HOST_XDG=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 
-# instance signatures of every Hyprland already running, so the new one can be
-# identified by elimination
-existing_sigs() { ls -1 "$XDG_RUNTIME_DIR/hypr" 2>/dev/null | sort; }
+# A private XDG_RUNTIME_DIR for the nested instance. See start() for why.
+NESTED_XDG="$RUNDIR/xdg"
+
+# instance signatures of every Hyprland in the NESTED runtime dir, so the new
+# one can be identified by elimination. With the private dir this is normally
+# empty before a run and one entry after - the host is not in here at all.
+existing_sigs() { ls -1 "$NESTED_XDG/hypr" 2>/dev/null | sort; }
 
 # The signature to drive, or nothing. Everything downstream is aimed at whatever
 # this returns - including `hl.dsp.exit()` - so it is verified rather than
@@ -60,7 +68,7 @@ nested_sig() {
 	fi
 
 	is_nested "$pid" || return 1
-	[ -S "$XDG_RUNTIME_DIR/hypr/$sig/.socket.sock" ] || return 1
+	[ -S "$NESTED_XDG/hypr/$sig/.socket.sock" ] || return 1
 
 	printf '%s\n' "$sig"
 }
@@ -74,7 +82,7 @@ ctl() {
 		echo "no verified nested instance - refusing to run hyprctl" >&2
 		return 1
 	}
-	HYPRLAND_INSTANCE_SIGNATURE=$sig hyprctl "$@"
+	XDG_RUNTIME_DIR="$NESTED_XDG" HYPRLAND_INSTANCE_SIGNATURE=$sig hyprctl "$@"
 }
 
 # Our nested instance is identified by the config path in its argv, never by a
@@ -126,12 +134,15 @@ host_ctl() {
 		;;
 	esac
 
+	# the HOST's runtime dir, deliberately: existing_sigs() looks in the
+	# nested one, which by construction never contains the host
 	local ours sig
 	ours=$(cat "$SIGFILE" 2>/dev/null)
-	for sig in $(existing_sigs); do
+	for sig in $(ls -1 "$HOST_XDG/hypr" 2>/dev/null | sort); do
 		[ "$sig" = "$ours" ] && continue
-		HYPRLAND_INSTANCE_SIGNATURE=$sig hyprctl version >/dev/null 2>&1 || continue
-		HYPRLAND_INSTANCE_SIGNATURE=$sig hyprctl "$@"
+		XDG_RUNTIME_DIR="$HOST_XDG" HYPRLAND_INSTANCE_SIGNATURE=$sig \
+			hyprctl version >/dev/null 2>&1 || continue
+		XDG_RUNTIME_DIR="$HOST_XDG" HYPRLAND_INSTANCE_SIGNATURE=$sig hyprctl "$@"
 		return
 	done
 	return 1
@@ -160,6 +171,46 @@ start() {
 	# Never inherit state from a previous run: a leftover pair that a crashed
 	# start() left half-written is the one thing nested_sig() cannot detect.
 	rm -f "$SIGFILE" "$PIDFILE"
+
+	# A THIRD thing that reaches past the nested instance, alongside libseat and
+	# the DRM backend below: the session's systemd/dbus environment.
+	#
+	# Hyprland exports WAYLAND_DISPLAY and HYPRLAND_INSTANCE_SIGNATURE to the
+	# systemd user manager at startup. It does this ITSELF - nested.lua has no
+	# autostart and no exec-once, and it happens anyway - so there is no config
+	# line to remove. Every nested run therefore overwrote the real session's
+	# values with the throwaway instance's:
+	#
+	#   WAYLAND_DISPLAY=wayland-1  ->  wayland-2
+	#
+	# Nothing running notices, because a running service already holds its own
+	# display. What breaks is the NEXT restart of any user service: it inherits
+	# a display that no longer exists and dies with "Failed to open display",
+	# then keeps dying, because nothing puts the value back. Observed as a
+	# desktop shell stuck in a restart loop 105 attempts deep, an hour after a
+	# test run nobody connected to it.
+	#
+	# Two things are needed and neither is sufficient alone: a private
+	# XDG_RUNTIME_DIR, and unsetting DBUS_SESSION_BUS_ADDRESS. The address is
+	# set explicitly in the environment (unix:path=/run/user/<uid>/bus), so
+	# moving the runtime dir on its own leaves dbus-update-activation-environment
+	# a perfectly good route to the session bus.
+	rm -rf "$NESTED_XDG"
+	mkdir -p "$NESTED_XDG"
+	chmod 700 "$NESTED_XDG"
+
+	# The wayland backend connects to the HOST compositor through
+	# $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY, so moving the runtime dir would leave
+	# it with nowhere to connect - it needs a route to the host even while it
+	# is cut off from the host's bus. Link the socket in; the .lock beside it
+	# belongs to the server and is deliberately not copied.
+	local host_wl=${WAYLAND_DISPLAY:-}
+	if [ -n "$host_wl" ]; then
+		case "$host_wl" in
+		/*) ln -sfn "$host_wl" "$NESTED_XDG/$(basename "$host_wl")" ;;
+		*) ln -sfn "$HOST_XDG/$host_wl" "$NESTED_XDG/$host_wl" ;;
+		esac
+	fi
 
 	local before
 	before=$(existing_sigs)
@@ -209,6 +260,8 @@ start() {
 	# the device list at a node that cannot be a GPU leaves the DRM backend with
 	# nothing to enumerate, so only the wayland one is left.
 	setsid env -u HYPRLAND_INSTANCE_SIGNATURE \
+		-u DBUS_SESSION_BUS_ADDRESS \
+		XDG_RUNTIME_DIR="$NESTED_XDG" \
 		LIBSEAT_BACKEND=noop \
 		AQ_DRM_DEVICES=/dev/null \
 		HYPRLAND_NO_SD_NOTIFY=1 \
@@ -229,7 +282,7 @@ start() {
 	local sig="" i=0
 	while [ "$i" -lt 60 ]; do
 		sig=$(comm -13 <(echo "$before") <(existing_sigs) | head -1)
-		[ -n "$sig" ] && [ -S "$XDG_RUNTIME_DIR/hypr/$sig/.socket.sock" ] && break
+		[ -n "$sig" ] && [ -S "$NESTED_XDG/hypr/$sig/.socket.sock" ] && break
 		sig=""
 		i=$((i + 1))
 		sleep 0.25

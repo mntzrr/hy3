@@ -74,8 +74,9 @@ a loaded machine) are the two knobs.
 ### The nested instance is not as isolated as it looks
 
 Guarding the `hyprctl` channel is not enough, and the harness spent a long time appearing safe
-while it was not. Two things reach past the nested instance, and both are held open for the
-whole run rather than at some moment a guard could check:
+while it was not. Three things reach past the nested instance. The first two are held open for
+the whole run rather than at some moment a guard could check; the third outlives the run
+entirely:
 
 - **libseat.** Hyprland opens a seat even under the wayland backend, where it needs nothing
   from one. With no seatd socket it falls back to logind, and the session it opens is whatever
@@ -93,7 +94,36 @@ whole run rather than at some moment a guard could check:
   Fix the seat and DRM succeeds instead, because the device nodes are ACL'd to the logged-in
   user: the harness comes up owning the real screens.
 
-`nested.sh` now sets `LIBSEAT_BACKEND=noop` and `AQ_DRM_DEVICES=/dev/null`. Neither may be
+- **The systemd/dbus environment**, and this one keeps hurting after the instance is gone.
+  Hyprland exports `WAYLAND_DISPLAY` and `HYPRLAND_INSTANCE_SIGNATURE` to the systemd user
+  manager at startup, and it does this *itself* — `nested.lua` has no autostart and no
+  `exec-once`, and it happens anyway, so there is no config line to remove. Every nested run
+  overwrote the real session's values with the throwaway instance's
+  (`WAYLAND_DISPLAY=wayland-1` → `wayland-2`).
+
+  Nothing running notices, because a running service already holds its own display. What
+  breaks is the **next restart of any user service**: it inherits a display that no longer
+  exists, dies with `Failed to open display`, and keeps dying, because nothing puts the value
+  back. It surfaced as a desktop shell stuck in a restart loop 105 attempts deep, an hour after
+  a test run nobody connected to it — the run had long since finished and the harness looked
+  innocent.
+
+  `nested.sh` gives the instance a private `XDG_RUNTIME_DIR` (`$RUNDIR/xdg`) **and** unsets
+  `DBUS_SESSION_BUS_ADDRESS`. Neither is sufficient alone: the bus address is set explicitly in
+  the environment (`unix:path=/run/user/<uid>/bus`), so moving the runtime dir on its own
+  leaves `dbus-update-activation-environment` a perfectly good route to the session bus. The
+  host's wayland socket is symlinked into the private dir, because the wayland backend still
+  has to reach the host compositor to open its windows.
+
+  Welcome side effect: the instance is now alone in its own `hypr/` directory, so the
+  set-difference signature discovery in `start()` — which the comments there rightly call a
+  heuristic whose cost of being wrong once is the user's session — can no longer see the host
+  at all. The explicit host-signature refusals stay anyway.
+
+  To check it still holds: `systemctl --user show-environment | grep WAYLAND_DISPLAY` before
+  and after a run. It must not change.
+
+`nested.sh` also sets `LIBSEAT_BACKEND=noop` and `AQ_DRM_DEVICES=/dev/null`. Neither may be
 removed without the other — dropping the second while keeping the first is what puts
 `HDMI-A-1` in a nested instance's monitor list. `start()` then asserts every output is a
 `WAYLAND-*` surface and refuses to continue otherwise, because both failures are silent: the
