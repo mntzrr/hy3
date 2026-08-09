@@ -28,11 +28,23 @@ pkg_check_modules(DEPS REQUIRED hyprland pixman-1 libdrm pango pangocairo libinp
 # the distribution happens to install lua.h directly in /usr/include - on a
 # distribution that puts it under /usr/include/lua5.4 the build fails.
 #
+# pkg-config rather than find_package(Lua), which cannot see the lua hyprland
+# is built against. CMake's FindLua only learned about lua 5.5 in 4.3 - its own
+# `.. versionadded:: 4.3` says so - and hyprland pins lua5_5. Anywhere with an
+# older cmake the configure step dies with "Could NOT find Lua (missing:
+# LUA_INCLUDE_DIR)" while the headers sit in the sysroot untouched, which is
+# what CI has been failing on: nix gives it cmake 4.1.2, this machine has 4.4.2
+# and never noticed. pkg-config has no such version ceiling.
+#
+# First match wins, so the unversioned name is tried first: nixpkgs and arch
+# both ship lua.pc for the current lua, and the versioned spellings are there
+# for distributions that only ship those.
+#
 # Headers only, deliberately: the lua symbols are resolved from hyprland at
 # load time, which is why this has always linked without liblua on the command
 # line. Linking one would add a DT_NEEDED on a lua that need not be the one
-# hyprland itself uses.
-find_package(Lua REQUIRED)
+# hyprland itself uses - hence LUA_INCLUDE_DIRS below and no LUA_LIBRARIES.
+pkg_search_module(LUA REQUIRED lua lua5.5 lua-5.5 lua55 lua5.4 lua-5.4)
 
 add_library(hy3 SHARED
 	src/main.cpp
@@ -81,6 +93,6 @@ if (HY3_NO_VERSION_CHECK)
 	target_compile_definitions(hy3 PRIVATE -DHY3_NO_VERSION_CHECK=TRUE)
 endif()
 
-target_include_directories(hy3 PRIVATE ${DEPS_INCLUDE_DIRS} ${LUA_INCLUDE_DIR})
+target_include_directories(hy3 PRIVATE ${DEPS_INCLUDE_DIRS} ${LUA_INCLUDE_DIRS})
 
 install(TARGETS hy3 LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
