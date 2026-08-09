@@ -115,6 +115,10 @@ public:
 	Config::ErrorResult layoutMsg(const std::string_view& sv) override;
 	std::optional<Vector2D> predictSizeForNewTarget() override;
 	SP<Layout::ITarget> getNextCandidate(SP<Layout::ITarget> old) override;
+	// fork: ITiledAlgorithm grew this and hy3 was inheriting the std::nullopt
+	// default, so anything asking hyprland which layout is in play got no answer
+	// from us. The name matches the one registered with addTiledAlgo in main.cpp.
+	std::optional<std::string> layoutName() const override { return "hy3"; }
 
 	// Hy3-specific public methods
 	// Returns the inserted node, or nullptr when it could not be placed - in
