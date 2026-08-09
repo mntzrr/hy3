@@ -60,7 +60,7 @@ Use the throwaway instance instead:
 
 ```sh
 test/nested.sh start 2   # throwaway Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 104 assertions over the fork's behaviour
+test/smoke.sh            # 106 assertions over the fork's behaviour
 test/nested.sh stop
 ```
 
@@ -330,3 +330,50 @@ What *is* safe, and is why the file-local helpers in `Hy3Layout.cpp`, `Hy3Node.c
 outside the plugin references them, and that alone removed the genuinely risky names — bare
 `reverse(ShiftDirection)`, `getAxis(ShiftDirection)`, `findTabBarAt(...)` — which another
 plugin in the same process could otherwise interpose on.
+
+### CI can fail on a toolchain version, not a dependency
+
+CI failed on every push for days with what looks unmistakably like a packaging bug:
+
+```
+Could NOT find Lua (missing: LUA_INCLUDE_DIR)
+FindLua.cmake:271
+CMakeLists.txt (find_package)
+```
+
+Nothing was missing. Hyprland is built against `lua5_5` and already lists it in
+`buildInputs`, which `default.nix` concatenates, so the headers were in the sysroot the whole
+time. **CMake's `FindLua` only learned about Lua 5.5 in 4.3** — see the `.. versionadded:: 4.3`
+in the module itself — and the nix toolchain supplies cmake **4.1.2**. This machine has 4.4.2,
+so it never reproduced, and "works here, fails in CI" reads as an environment problem long
+before it reads as *the finder is older than the dependency*.
+
+Two wrong fixes were tried first and both would have been committed on reasoning alone: adding
+`lua` to `default.nix` (a no-op, it is already there transitively), and chasing a split `dev`
+output hiding the headers (nixpkgs' lua is `outputs = [ "out" "doc" ]`, headers in `$out`).
+What settled it was reproducing under the real toolchain. `find_package` is now
+`pkg_search_module`, which has no version ceiling.
+
+The general shape is worth keeping: when a build fails only in CI, compare the *tools* before
+the *inputs* — `cmake --version` here against the one in the failure's own stack trace, which
+prints its store path and therefore its version on every line.
+
+**Reproducing CI locally** is the only way to be sure, and needs nix working:
+
+```sh
+nix build .#hy3 --print-build-logs
+```
+
+- The arch `nix` package creates neither `/nix/store` nor any `/nix/*` path it owns. Without
+  it every command dies with `error: opening file "/nix/store": No such file or directory`,
+  and starting `nix-daemon.socket` does not help because the client fails before reaching the
+  daemon. `sudo install -d -m 1775 -o root -g nixbld /nix/store` — the group is `nixbld`, per
+  `build-users-group` in `/etc/nix/nix.conf`. Your account joins nothing; unprivileged access
+  goes through the daemon.
+- `NIX_REMOTE=daemon` is exported by `/etc/profile.d/nix-daemon.sh` in **login shells only**,
+  so a script or an agent shell has to set it.
+- Flakes are not enabled by default: `--extra-experimental-features 'nix-command flakes'`.
+- CI pulls Hyprland from `hyprland.cachix.org`; adding a substituter needs root, so without it
+  the first local run **builds Hyprland from source** — ~16 minutes on 24 cores. Only hyprland
+  and hy3 are built, everything else substitutes from `cache.nixos.org`. It is cached
+  afterwards, so only the first run is slow.
