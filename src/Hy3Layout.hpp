@@ -1,16 +1,8 @@
 #pragma once
 
-#include <hyprland/src/desktop/DesktopTypes.hpp>
-class Hy3Layout;
-
-enum class GroupEphemeralityOption {
-	Ephemeral,
-	Standard,
-	ForceEphemeral,
-};
-
 #include <set>
 
+#include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/layout/algorithm/TiledAlgorithm.hpp>
 #include <hyprland/src/layout/algorithm/Algorithm.hpp>
 #include <hyprland/src/layout/space/Space.hpp>
@@ -20,81 +12,11 @@ enum class GroupEphemeralityOption {
 #include <hyprland/src/helpers/signal/Signal.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 
-enum class ShiftDirection {
-	Left,
-	Up,
-	Down,
-	Right,
-};
-inline static constexpr char getShiftDirectionChar(ShiftDirection direction) {
-	return direction == ShiftDirection::Left ? 'l'
-	     : direction == ShiftDirection::Up   ? 'u'
-	     : direction == ShiftDirection::Down ? 'd'
-	                                         : 'r';
-}
-
-inline static Math::eDirection shiftToMathDirection(ShiftDirection direction) {
-	switch (direction) {
-	case ShiftDirection::Left: return Math::DIRECTION_LEFT;
-	case ShiftDirection::Right: return Math::DIRECTION_RIGHT;
-	case ShiftDirection::Up: return Math::DIRECTION_UP;
-	case ShiftDirection::Down: return Math::DIRECTION_DOWN;
-	}
-	return Math::DIRECTION_DEFAULT;
-}
-
-enum class Axis { None, Horizontal, Vertical };
-
+#include "Types.hpp"
 #include "Hy3Node.hpp"
 #include "TabGroup.hpp"
 
-enum class FocusShift {
-	Top,
-	Bottom,
-	Raise,
-	Lower,
-	Tab,
-	TabNode,
-};
-
-enum class TabFocus {
-	MouseLocation,
-	Left,
-	Right,
-	Index,
-};
-
-enum class TabFocusMousePriority {
-	Ignore,
-	Prioritize,
-	Require,
-};
-
-enum class TabLockMode {
-	Lock,
-	Unlock,
-	Toggle,
-};
-
-enum class SetSwallowOption {
-	NoSwallow,
-	Swallow,
-	Toggle,
-};
-
-enum class ExpandOption {
-	Expand,
-	Shrink,
-	Base,
-	Maximize,
-	Fullscreen,
-};
-
-enum class ExpandFullscreenOption {
-	MaximizeOnly,
-	MaximizeIntermediate,
-	MaximizeAsFullscreen,
-};
+class Hy3Layout;
 
 PHLWORKSPACE workspace_for_action(bool allow_fullscreen = false);
 

@@ -5,6 +5,9 @@
 #include <hyprland/src/render/pass/PassElement.hpp>
 class Hy3TabGroup;
 class Hy3TabBar;
+struct Hy3Node;
+
+#include "Types.hpp"
 
 #include <list>
 #include <vector>
@@ -30,7 +33,6 @@ struct Hy3TabGroupWrapper {
 	operator bool() const { return inner.get() != nullptr; }
 };
 
-#include "Hy3Node.hpp"
 
 struct Hy3TabBarEntry {
 	std::string window_title;

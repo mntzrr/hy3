@@ -4,7 +4,7 @@ struct Hy3Node;
 struct Hy3TargetNode;
 struct Hy3GroupNode;
 struct Hy3RootNode;
-enum class Hy3GroupLayout;
+class Hy3Layout;
 
 namespace Config {
 	class CCssGapData;
@@ -16,38 +16,8 @@ namespace Config {
 #include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/layout/target/Target.hpp>
 
-#include "Hy3Layout.hpp"
+#include "Types.hpp"
 #include "TabGroup.hpp"
-
-enum class Hy3GroupLayout {
-	Root,
-	SplitH,
-	SplitV,
-	Tabbed,
-};
-
-enum class Hy3NodeType {
-	Target,
-	Group,
-};
-
-enum class ExpandFocusType {
-	NotExpanded,
-	Latch,
-	Stack,
-};
-
-enum class Ephemeral {
-	Off,
-	Staged,
-	Active,
-};
-
-enum class CollapsePolicy {
-	InvalidOnly,
-	EmptySplits,
-	SingleNodeGroups,
-};
 
 struct Hy3Node {
 	WP<Hy3Node> parent;
