@@ -777,6 +777,92 @@ check "instance survived the tag syncing"                "yes" "$(alive)"
 setflag tag_windows false
 
 echo
+echo "== #211 swapTargets =="
+# Hy3Layout::swapTargets was an empty `// todo` upstream, which made hyprland's
+# own swap dispatchers silent no-ops under hy3. Everything below drives
+# hyprland's dispatcher rather than a hy3 one - the fix is that a dispatcher
+# the user already had starts doing something.
+#
+# Four of these fail against the pre-fix tree. The other four are checked
+# against it too, and the reason they pass is worth writing down: hyprland does
+# its own half of a swap either way. ITarget::swap rewrites CSpace::m_targets,
+# swaps the two m_space pointers and flips the floating flags without asking
+# the algorithm anything, so "the workspaces changed" and "the layers changed"
+# are true with an empty swapTargets and an hy3 tree that no longer describes
+# the screen. Every assertion that bites therefore reads a *box* - only the
+# layout decides those.
+swap_geoms() { echo "$(geom "$1") $(geom "$2")"; }
+
+pin_mon0
+cleanup_windows
+spawn t_n || { echo "could not spawn t_n" >&2; exit 1; }
+spawn t_o || { echo "could not spawn t_o" >&2; exit 1; }
+SW_N=$(addr_of t_n); SW_O=$(addr_of t_o)
+[ -n "$SW_N" ] && [ -n "$SW_O" ] || { echo "could not spawn the swap windows" >&2; exit 1; }
+
+focus "$SW_N"
+G_N=$(stable geom "$SW_N"); G_O=$(stable geom "$SW_O")
+dispatch "hl.dsp.window.swap({ direction = 'right' })" 0.5
+check_eventually "the two windows exchange boxes"        "$G_O $G_N" swap_geoms "$SW_N" "$SW_O"
+check_eventually "focus stays with the window, not the slot" "$SW_N" active_addr
+
+# The load-bearing one. swapInDirection preserves focus, so hyprland fires no
+# focus event and hy3's own focused_child would still name the slot the window
+# just left. movefocus is the only oracle for that - it walks the tree from
+# whatever hy3 believes is focused, so a stale marker sends it the wrong way.
+# t_n sits on the right after the swap: with the marker corrected, a left move
+# lands on t_o; with a stale one there is nothing to the left and focus stays
+# put. Verified by ablation - dropping the markFocused call fails this and
+# nothing else.
+dispatch "hl.plugin.hy3.move_focus('l')" 0.4
+check_eventually "hy3's focus marker followed the window" "$SW_O" active_addr
+
+focus "$SW_N"
+dispatch "hl.dsp.window.swap({ direction = 'left' })" 0.5
+check_eventually "swapping back restores both boxes"     "$G_N $G_O" swap_geoms "$SW_N" "$SW_O"
+
+# Two spaces: hyprland calls the algorithm once per space, each naming its own
+# target first, and neither call sees a node for the other one. Node identity
+# staying with the slot is what makes that work - there is no foreign node to
+# splice in, only a target to adopt.
+dispatch "hl.dsp.focus({ workspace = '7' })" 0.6
+spawn t_p || { echo "could not spawn t_p" >&2; exit 1; }
+SW_P=$(addr_of t_p)
+[ -n "$SW_P" ] || { echo "could not spawn the cross-workspace swap window" >&2; exit 1; }
+focus "$SW_P"
+dispatch "hl.dsp.window.swap({ target = 'address:$SW_N' })" 0.6
+check_eventually "a cross-workspace swap moves both windows" "7 1" ws2 "$SW_N" "$SW_P"
+dispatch "hl.dsp.focus({ workspace = '1' })" 0.6
+# The one that bites: arriving on workspace 1 is hyprland's doing, but taking
+# over the slot t_n left is hy3's. Without the fix the incoming window is not
+# in this tree at all and keeps the box it had on workspace 7.
+check_eventually "the incoming window takes the vacated slot" "$G_N" geom "$SW_P"
+
+# One tiled, one floating: hyprland calls each mode algorithm once, ours naming
+# the tiled target first, so the tiled slot has to adopt a target that is still
+# marked floating when it arrives.
+#
+# The box is asserted only after a later layout event, and that is not slack in
+# the harness. hyprland flips the floating flags in a scope guard that runs
+# *after* it recalculates the space, so the window that just became tiled is
+# laid out while it still reads as floating and takes the floating branch of
+# CWindowTarget::updatePos - it holds the ungapped box until something else
+# recalculates. That ordering is hyprland's and not hy3's to paper over:
+# dwindle lands 2px out on the same sequence. What is hy3's, and what this
+# checks, is that the window ends up in the tree at all.
+focus "$SW_O"
+dispatch "hl.dsp.window.float({})" 0.5
+check_eventually "one of the pair is floating"           "true" is_floating "$SW_O"
+TILED_SLOT=$(stable geom "$SW_P")
+focus "$SW_P"
+dispatch "hl.dsp.window.swap({ target = 'address:$SW_O' })" 0.6
+check_eventually "a tiled/floating swap trades both layers" "true false" floating2 "$SW_P" "$SW_O"
+focus "$SW_O"
+dispatch "hl.plugin.hy3.equalize()" 0.4
+check_eventually "the tiled slot lays out the window it adopted" "$TILED_SLOT" geom "$SW_O"
+check "instance survived the swaps"                      "yes" "$(alive)"
+
+echo
 echo "== teardown =="
 cleanup_windows
 check "instance survived the run"              "yes" "$(alive)"

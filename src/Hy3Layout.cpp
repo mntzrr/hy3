@@ -559,8 +559,66 @@ void Hy3Layout::resizeTarget(const Vector2D& delta, SP<Layout::ITarget> target, 
 	}
 }
 
+// fork: upstream leaves this a `// todo` with an empty body, which is why
+// hyprland's `swapwindow` and `swapnext` are silent no-ops under hy3 -
+// upstream #211. It is the only unimplemented override in the layout; dwindle,
+// master, monocle and scrolling all provide one.
+//
+// The contract is not "swap two nodes of mine". hyprland calls this from
+// ITarget::swap, which has already rewritten CSpace::m_targets and
+// CAlgorithm::m_tiledTargets, and calls it once per algorithm involved:
+//
+//   - both targets tiled in this space -> one call naming two of ours
+//   - one tiled, one floating -> one call per mode algorithm, each naming its
+//     own target first
+//   - targets in two spaces -> one call per space, likewise
+//
+// So the general form is "`a` is mine and `b` takes its place", with the
+// both-mine case an exchange. Node identity therefore stays with the position:
+// the box, size ratio, group membership and focus marker all belong to the
+// slot, and only the window inside it moves. That is what makes the
+// cross-space and tiled/floating calls work at all - there is no foreign node
+// to splice in, only a target to adopt. It is also the semantic the old
+// pre-0.54 tree implemented as Hy3Node::swapData.
+//
+// No recalcGeometry() here: ITarget::swap recalculates every space it touched
+// once the last algorithm has been called.
 void Hy3Layout::swapTargets(SP<Layout::ITarget> a, SP<Layout::ITarget> b) {
-	// todo
+	if (!a || !b || a == b) return;
+
+	auto* node_a = this->getNodeFromTarget(a);
+	auto* node_b = this->getNodeFromTarget(b);
+	if (node_a == nullptr && node_b == nullptr) return;
+
+	// findNodeFromTargetRecursive only ever matches a target node, but the cast
+	// is what makes that a compile-time fact rather than an assumption.
+	auto adopt = [](Hy3Node* node, SP<Layout::ITarget> target) {
+		if (auto* target_node = dynamic_cast<Hy3TargetNode*>(node)) target_node->target = target;
+	};
+
+	if (node_a != nullptr) adopt(node_a, b);
+	if (node_b != nullptr) adopt(node_b, a);
+
+	// Each window is now under a different part of the tree, so the tags that
+	// describe where it sits have to be recomputed. A window that left this
+	// tree entirely keeps the tags it had, as it does on removeTarget.
+	if (node_a != nullptr) node_a->syncHy3Tags();
+	if (node_b != nullptr) node_b->syncHy3Tags();
+
+	// hyprland covers the common focus path itself: switchTargets refocuses
+	// whichever window landed in the focused slot, and that focus event marks
+	// its node here. Under preserveFocus nothing fires - the focused *window*
+	// moves instead - which would leave focused_child pointing at the slot that
+	// window just left. Mark whichever node holds it now.
+	auto focused = Desktop::focusState()->window();
+	if (focused) {
+		for (auto* node: {node_a, node_b}) {
+			if (node == nullptr || node->try_window() != focused) continue;
+			node->markFocused();
+			this->updateGroupBorderColors();
+			break;
+		}
+	}
 }
 
 void Hy3Layout::moveTargetInDirection(SP<Layout::ITarget> t, Math::eDirection dir, bool silent) {
