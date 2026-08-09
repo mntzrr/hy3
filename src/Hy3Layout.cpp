@@ -668,8 +668,89 @@ Config::ErrorResult Hy3Layout::layoutMsg(const std::string_view& sv) {
 	return {};
 }
 
+// fork: upstream returns nullopt, so anything asking hyprland how big the next
+// tiled window will be got no answer from hy3 and fell back to a default. The
+// layout knows: insertNode puts a new node next to the focused one's placement
+// actor, inside that node's parent group, and recalcSizePosRecursive then gives
+// every child of a split an equal share of what is left after the gaps between
+// them.
+//
+// Deliberately mirrors the *common* path rather than every branch of
+// insertNode. Autotile can wrap the target in a fresh group first, and a drop
+// with a focal point can land elsewhere entirely, but neither is knowable here:
+// this is asked before there is a window, and takes no arguments. A prediction
+// is allowed to be an estimate - it is not what the window is finally laid out
+// with, recalcGeometry is.
 std::optional<Vector2D> Hy3Layout::predictSizeForNewTarget() {
-	return std::nullopt;
+	// clang-format off
+	static const auto p_gaps_in = CConfigValue<Config::IComplexConfigValue>("general:gaps_in");
+	static const auto tab_bar_height = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:height");
+	static const auto tab_bar_padding = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:padding");
+	// clang-format on
+
+	auto algo = this->m_parent.lock();
+	if (!algo) return std::nullopt;
+	auto space = algo->space();
+	if (!space) return std::nullopt;
+
+	auto work_area = space->workArea();
+
+	auto ws = this->workspace();
+	auto workspace_rule = ::valid(ws) ? Config::workspaceRuleMgr()->getWorkspaceRuleFor(ws)
+	                                  : std::optional<Config::CWorkspaceRule>();
+	auto gaps_in = workspace_rule.and_then([](auto r) { return r.m_gapsIn; })
+	                   .value_or(*sc<Config::CCssGapData*>(p_gaps_in.ptr()));
+
+	// The boxes below are the node's, and a window sits inside its node inset by
+	// gaps_in on every side - so the window is this much smaller than the slot it
+	// occupies, in both axes, whatever the layout. Measured rather than derived:
+	// without it the prediction came out uniformly 2*gap too large for one, two,
+	// three and four windows alike.
+	auto gap_inset = Vector2D(
+	    static_cast<double>(gaps_in.m_left + gaps_in.m_right),
+	    static_cast<double>(gaps_in.m_top + gaps_in.m_bottom)
+	);
+
+	// an empty workspace: the first window is the root group's only child and
+	// gets the whole work area
+	auto* root_group = this->getWorkspaceRootGroup(nullptr);
+	if (root_group == nullptr) return work_area.size() - gap_inset;
+
+	auto* opening_after = &root_group->getFocusedNode().getPlacementActor();
+	auto* opening_into = opening_after->parent.get();
+	if (opening_into == nullptr || !opening_into->is_group()) return std::nullopt;
+
+	auto& group = opening_into->as_group();
+	auto box = opening_into->visualBox;
+	auto child_count = group.children.size() + 1; // the one about to be added
+
+	Vector2D size;
+
+	switch (group.layout) {
+	case Hy3GroupLayout::SplitH: {
+		auto inter_gap = gaps_in.m_left + gaps_in.m_right;
+		size = {(box.w - (child_count - 1) * inter_gap) / child_count, box.h};
+		break;
+	}
+	case Hy3GroupLayout::SplitV: {
+		auto inter_gap = gaps_in.m_top + gaps_in.m_bottom;
+		size = {box.w, (box.h - (child_count - 1) * inter_gap) / child_count};
+		break;
+	}
+	case Hy3GroupLayout::Tabbed:
+		// every tab covers the group minus the bar, however many there are
+		size = {box.w, box.h - (*tab_bar_height + *tab_bar_padding)};
+		break;
+	case Hy3GroupLayout::Root: size = work_area.size(); break;
+	}
+
+	size -= gap_inset;
+
+	// a group too small to divide further predicts nothing rather than a
+	// negative size
+	if (size.x <= 0 || size.y <= 0) return std::nullopt;
+
+	return size;
 }
 
 SP<Layout::ITarget> Hy3Layout::getNextCandidate(SP<Layout::ITarget> old) {
