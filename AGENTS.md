@@ -275,6 +275,31 @@ from a hand-run check.
 
   It does not isolate blocks completely — they are a chain, and a skipped one still denies its
   side effects to later blocks. Expect a couple of genuine failures downstream of a skip.
+- **A whole block failing at once means a dispatch went to the wrong window.** Every dispatch
+  in the suite acts on the *focused* node, so if focus is not where the block assumes,
+  everything after it is applied somewhere else. `check_eventually` cannot rescue that — the
+  operation went elsewhere, so the state it polls for was never requested, and it waits out the
+  full timeout for something nobody asked for. The signature is a block failing together while
+  each assertion looks individually reasonable.
+
+  `focus()` used to enable exactly this: it ended in `settle_until addr_is`, whose result was
+  **discarded at all 36 call sites**. It now retries once and then calls `harness_fail`, so a
+  focus that never lands reports one `PRECONDITION` line naming the window focus actually
+  reached. `pin_mon0` (which verified nothing at all), `move_window_until`, `spawn` and the two
+  bare `settle_until` calls had the same shape and got the same treatment.
+
+  It was found by accident, which is the useful part: a probe written to loop the
+  `movetomonitor` sequence failed 12 of 25 runs, and the bug was in the *probe* — a no-follow
+  move hands focus back to the origin monitor, so its next dispatch acted on the other window.
+  Corrected, 25 of 25. If you write a throwaway probe, focus explicitly before every dispatch;
+  assuming focus stayed put is the same mistake in miniature.
+
+  **This is not established as the cause of the flakiness seen in practice.** That could not be
+  reproduced to test against: neither the fixed nor the unfixed harness fails under 12 cpu
+  spinners, nor under 6 spinners plus 4 `dd` loops at loadavg 17. So "it tracks machine load",
+  which an earlier reading of run times suggested, does not survive a controlled test. The only
+  confirmed trigger is still the moved-windows one above.
+
 - **Establish the baseline before believing a failure is yours.** Those four failures looked
   like a regression in the code under test; `git stash && cmake --build build` and a rerun
   showed the pre-change tree passing every assertion, which pointed straight at the harness
