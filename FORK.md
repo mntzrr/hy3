@@ -193,6 +193,13 @@ with no lua on the command line — and a `DT_NEEDED` on a liblua that need not 
 hyprland itself uses is a new failure mode for nothing. `readelf -d build/libhy3.so` should
 list no lua after a rebase resolves a conflict here.
 
+The same hole was still open for GL. `src/render.cpp`, `src/shaders.cpp` and `src/TabGroup.cpp`
+include `<GLES2/gl2.h>`, and `hyprland.pc` requires `egl` and `cairo` but not `glesv2` — so
+that header, too, was found only because mesa installs it under `/usr/include`. `glesv2` is now
+in the `pkg_check_modules` list, headers-only for the same reason and by the same mechanism:
+there is no `target_link_libraries` in this build at all, so adding it moves include dirs and
+nothing else. Upstream **#318** reports the identical thing for glslang.
+
 **#327 is the one backport that is not a fix.** It is a feature, taken because it is gated,
 off by default, and mergeable upstream — so it drops out on rebase like the rest rather than
 becoming a permanent carry. It answers **#294** without a dedicated match property: a rule
@@ -223,6 +230,15 @@ Two interactions worth knowing:
 - **#298 registers a new listener.** `PLUGIN_EXIT` releases it, and `g_focusedMonitor`, above
   the `shutdown()` loop — nothing may stay registered holding a callback compiled into the
   `.so`. See the crash notes in `AGENTS.md`.
+
+**The README fixes are not in the table**, deliberately. `#205` (`makingg`), `#238` (three
+spellings of `available`, one `corrosponding`) and `#322`'s dispatcher list are doc-only PRs
+whose content is taken but whose commits are not: they are one `fork:` commit with no
+`Upstream-PR:` trailer, so a rebase after upstream merges any of them resolves as an ordinary
+text conflict rather than a dropped commit. #238's stray blank line and #322's example block
+are left behind — the block is worth having, but not with `Theese` in it. #322 is the one that
+is not cosmetic: `hy3:movetoworkspace` and `hy3:killactive` are documented further down the
+same README as dispatchers to use, and were missing from the list of ones to replace.
 
 `#295` is superseded by `#296`. `#289`/`#168` are already in upstream master — note that
 both PRs are still *open* on GitHub, their content having landed independently, so the PR
@@ -303,6 +319,8 @@ commit whatever its hash has become.
 | *floating movewindow* | with a floating window focused, `hy3:movewindow` moved a **tiled** node instead — `getWorkspaceFocusedNode` answers with whatever tiled node last had focus, and the user is not looking at it. Reported as **#223**; **#226** and **#85** are the feature half, which is feature 5 above | `Hy3Layout::shiftWindow` |
 | *floating tree edits* | the same thing, quietly: `makegroup`, `changegroup`, `untab`, `toggletab`, `setswallow` and `expand` all reshaped the tiled tree behind a floating window. Never reported — nothing moves where the user is looking. See below | `getWorkspaceFocusedNodeIfTiled()`, nine call sites |
 | *tab font size* | a size written into `tabs:text_font` was parsed and then overwritten by `text_height`, so the standard way to write a pango description silently did nothing — **upstream #275**, no PR | `Hy3TabBarEntry::renderText` |
+| *swap stub* | `swapTargets` was an empty `// todo`, so hyprland's own `swapwindow`, `swapnext` and `hl.window.swap` were silent no-ops under hy3 — **upstream #211**, no PR. See below | `Hy3Layout::swapTargets` |
+| *glesv2 finder* | three files include `<GLES2/gl2.h>` and nothing in `hyprland.pc` asks for it, so the header was found by luck the way `<lua.h>` was before #328 — **upstream #318** reports the same for glslang | `CMakeLists.txt` |
 
 Four of these are worth re-checking against upstream before each rebase, because they are the
 ones upstream is most likely to fix independently and in a different way: `97273d2`
@@ -439,6 +457,52 @@ The bar does not grow to fit: `tabs:height` is what sizes it, and a font larger 
 overflows, exactly as it does when `text_height` is raised past the bar. That is the existing
 behaviour of the knob this restores, not a new one.
 
+### The swap stub
+
+`Hy3Layout::swapTargets` was an empty `// todo` — the only unimplemented override in the
+layout, where dwindle, master, monocle and scrolling all provide one. Nothing announces that:
+hyprland's `swapwindow`, `swapnext` and `hl.window.swap` are dispatchers a user already has,
+and under hy3 they simply did nothing. Upstream **#211**, open since May 2025, no PR.
+
+**The contract is not "swap two nodes of mine".** hyprland calls this from `ITarget::swap`,
+which has already rewritten `CSpace::m_targets` and `CAlgorithm::m_tiledTargets` by the time
+the algorithm hears about it, and which calls one algorithm per side:
+
+- both targets tiled in this space — one call naming two of ours;
+- one tiled, one floating — one call per mode algorithm, each naming its own target first;
+- targets in two spaces — one call per space, likewise.
+
+So the general form is "`a` is mine and `b` takes its place", with the both-mine case an
+exchange. **Node identity therefore stays with the position**: the box, size ratio, group
+membership and focus marker all belong to the slot, and only the window inside it moves. That
+is what makes the cross-space and tiled/floating calls work at all — there is no foreign node
+to splice in, only a target to adopt. It is also the shape the pre-0.54 tree implemented as
+`Hy3Node::swapData`, which the refactor to typed nodes dropped along with the caller.
+
+Two things follow from it and are not obvious:
+
+- **Tags are resynced.** `hy3_grouped`/`hy3_tabbed` describe where a window sits, and after a
+  swap each window sits somewhere else. A window that leaves this tree entirely keeps the tags
+  it had, which is what `removeTarget` already does.
+- **Focus is marked by hand.** `switchTargets` refocuses whichever window landed in the focused
+  slot, and that focus event marks its node here — but `swapWith` and `swapInDirection`, which
+  is what `hl.window.swap` actually calls, pass `preserveFocus`. Nothing fires then: the
+  focused *window* moves instead, and `focused_child` would still name the slot it left. The
+  suite catches exactly this and nothing else if the `markFocused` call is dropped.
+
+There is no `recalcGeometry()` in it. `ITarget::swap` recalculates every space it touched once
+the last algorithm has been called.
+
+**One artifact is hyprland's and is left alone.** Those flags are flipped in a `CScopeGuard`
+that runs *after* the recalculate, so on a tiled/floating swap the window that just became
+tiled is laid out while it still reads as floating, takes the floating branch of
+`CWindowTarget::updatePos`, and holds the ungapped box until the next layout event moves it.
+Dwindle lands 2px out on the same sequence, which is what says the ordering is hyprland's
+rather than hy3's. The two ways to paper over it from here are a deferred recalc — a callback
+compiled into this `.so`, fired from hyprland's loop, which is the dangling-callback class
+`shutdown()` exists to close — or pushing `visualBox` where `logicalBox` belongs, which is a
+bet on the internals of `updatePos`. Neither is worth a frame of gaps.
+
 The suite covers the fullscreen cross-monitor path under **#241** — five assertions, of which
 "origin reclaimed the space" is the load-bearing one: it says the moved node really left the
 origin tree rather than being stranded there while its window went elsewhere, which is exactly
@@ -465,6 +529,16 @@ argued. Two are the wrong-window move itself — the two tiled windows swap plac
 floating one sits still — and they need *two* tiled windows to be observable at all: with one,
 the bad move is a no-op and the assertion passes against a build carrying the bug. The other
 three are the feature and the fallthrough hop.
+
+**The #211 block is a real regression test too**, and its four biting assertions were found by
+ablation rather than assumed: putting the `// todo` back fails "the two windows exchange
+boxes", "hy3's focus marker followed the window", "the incoming window takes the vacated slot"
+and "the tiled slot lays out the window it adopted", and passes the other four. Why those four
+pass is the useful half. hyprland does its own share of a swap regardless of the algorithm —
+`ITarget::swap` rewrites `CSpace::m_targets`, exchanges the two `m_space` pointers and flips
+the floating flags without asking anything — so "the workspaces changed" and "the layers
+changed" are both true against an empty `swapTargets` and a tree that no longer describes the
+screen. Every assertion that bites reads a *box*, because only the layout decides those.
 
 The #327 block is seven assertions and none of them is a regression test - the code is new,
 so there is no pre-fix build to fail against. What they pin down is the contract: off is a
@@ -503,7 +577,7 @@ plugin that owns every window is disruptive at best, and has crashed the composi
 
 ```sh
 test/nested.sh start 2   # nested Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 88 assertions covering everything below
+test/smoke.sh            # 98 assertions covering everything below
 test/nested.sh stop
 ```
 
