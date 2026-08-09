@@ -1,8 +1,45 @@
 # Working on this repo
 
-A personal fork of [outfoxxed/hy3](https://github.com/outfoxxed/hy3), kept in sync by rebasing
-onto `upstream/master`. Not intended for upstreaming. **Read `FORK.md`** — it covers what the
-fork adds, how changes are kept conflict-minimal, and how to install it with hyprpm.
+Derived from [outfoxxed/hy3](https://github.com/outfoxxed/hy3) and **maintained
+independently** — no longer rebased onto it. Not intended for upstreaming. **Read `FORK.md`**
+— it covers what this adds, why each change exists, and how to install it with hyprpm.
+
+## Relationship to upstream
+
+`upstream` is kept as a **read-only** remote and is never rebased onto:
+
+```sh
+git remote set-url --push upstream DISABLED   # re-apply after a fresh clone
+```
+
+That is local config, not something the repo carries, so a fresh clone starts with a pushable
+upstream again — re-run it. It makes an accidental `git push upstream` fail on a bad URL
+instead of on credentials, which is the difference between a typo and an incident.
+
+Upstream is good at one thing this needs: chasing Hyprland releases quickly, usually tagging
+`hl<version>` within a day of a major. It is slow at bug fixes — nine of its open issues were
+fixed here rather than waited on. So the relationship is: take the release chasing, do the
+rest here.
+
+When a Hyprland update breaks the build:
+
+```sh
+git fetch upstream
+git log --oneline upstream/master
+git cherry-pick <chase commit>     # or hand-apply; conflicts are expected, see below
+```
+
+Expect conflicts in `src/`, and expect to resolve them by understanding both sides rather than
+by taking one. The tree has diverged in the hot paths on purpose — `Hy3Node` carries a type tag
+where upstream uses `dynamic_cast`, `recalcSizePosRecursive` is split in two and takes gaps
+from its caller, `getNodeFromWindow` walks once. None of that is coming back.
+
+**What changed by stopping rebases**, and it is the one thing worth knowing before touching
+`FORK.md`'s tables: the backports carrying an `Upstream-PR:` trailer were designed so that a
+rebase *drops them automatically* once upstream merged the PR. Nothing drops automatically any
+more. If a backported PR is merged upstream and its commit is later cherry-picked in, the
+change arrives twice. Check `FORK.md`'s backport table against `upstream/master` before
+cherry-picking anything near it.
 
 ## Ground rules
 

@@ -5,6 +5,14 @@
 
 i3 / sway like layout for [hyprland](https://github.com/hyprwm/hyprland).
 
+> **This is an independently maintained fork** of
+> [outfoxxed/hy3](https://github.com/outfoxxed/hy3), derived from it but no longer tracking it.
+> Additions are marked **(fork)** throughout; everything unmarked is upstream's work, under the
+> same GPL-3. See [FORK.md](./FORK.md) for what differs and why.
+>
+> The matrix room, issue tracker and AUR packages linked below are **upstream's**. Problems with
+> this fork are not theirs to field — do not report fork behaviour there.
+
 [Installation](#installation), [Configuration](#configuration)
 
 *Check the [changelog](./CHANGELOG.md) for a list of new features and improvements*

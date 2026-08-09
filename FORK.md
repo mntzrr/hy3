@@ -1,11 +1,25 @@
 # Fork notes
 
-This is a fork of [outfoxxed/hy3](https://github.com/outfoxxed/hy3). It tracks upstream and
-adds a handful of features that previously had to be emulated from the Hyprland config with
-Lua wrappers and `hyprctl`/`jq` shell scripts. There is no intent to upstream them.
+Derived from [outfoxxed/hy3](https://github.com/outfoxxed/hy3), **maintained independently**,
+and no longer rebased onto it. It adds a handful of features that previously had to be
+emulated from the Hyprland config with Lua wrappers and `hyprctl`/`jq` shell scripts. There is
+no intent to upstream them.
 
-Everything below is **off by default** — with no extra configuration this fork behaves exactly
-like upstream. New behaviour is gated behind config flags; new dispatchers are purely additive.
+Everything user-facing is **off by default** — with no extra configuration this behaves like
+upstream. New behaviour is gated behind config flags; new dispatchers are purely additive.
+
+> **On the rebase-era material below.** Much of this file was written while the tree was kept
+> rebasable onto `upstream/master`, and it is organised around that: tables to check before and
+> after a rebase, backports carrying an `Upstream-PR:` trailer so that a rebase drops them once
+> upstream merges, and a standing rule that changes stay additive to keep conflicts cheap.
+>
+> That rule no longer binds, and the tree has since diverged in the hot paths deliberately —
+> `Hy3Node` carries a type tag instead of `dynamic_cast`, `recalcSizePosRecursive` is split and
+> takes resolved gaps from its caller, `getNodeFromWindow` walks the tree once. The **reasons**
+> recorded below are still the reference for why each change exists, which is why they stay.
+> The **rebase mechanics** are now history: nothing drops out automatically, so a backport
+> whose PR upstream later merges will arrive twice if that commit is cherry-picked in. See
+> "Relationship to upstream" in `AGENTS.md` for how upstream is used now.
 
 ## Installing with hyprpm
 

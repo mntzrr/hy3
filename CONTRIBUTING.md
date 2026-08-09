@@ -1,8 +1,10 @@
 # Contributing
 
-This is a personal fork of [outfoxxed/hy3](https://github.com/outfoxxed/hy3). See `FORK.md`
-for what it adds and how it tracks upstream, and `AGENTS.md` for the practical notes on
-working in this codebase — especially how to test changes without taking down a live session.
+This is a personal project derived from [outfoxxed/hy3](https://github.com/outfoxxed/hy3) and
+maintained independently of it. See `FORK.md` for what it adds and why, and `AGENTS.md` for
+the practical notes on working in this codebase — especially how to test changes without
+taking down a live session, and how upstream is used now that this is no longer rebased onto
+it.
 
 ## AI assistance
 
