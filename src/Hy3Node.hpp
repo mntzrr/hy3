@@ -61,6 +61,9 @@ struct Hy3Node {
 	Hy3Node(const Hy3Node&) = delete;
 	Hy3Node& operator=(const Hy3Node&) = delete;
 
+	// These stay dynamic_cast on purpose: m_type below only separates target from
+	// group, so telling Hy3RootNode apart from a plain Hy3GroupNode still needs
+	// the real thing. Neither is currently used.
 	template<typename T> bool is() const { return dynamic_cast<const T*>(this) != nullptr; }
 	template<typename T> T& as() { return dynamic_cast<T&>(*this); }
 	template<typename T> const T& as() const { return dynamic_cast<const T&>(*this); }
@@ -146,11 +149,23 @@ struct Hy3Node {
 	void wrap(Hy3GroupLayout, GroupEphemeralityOption, bool change = true);
 
 protected:
-	Hy3Node() = default;
+	// fork: the node's kind, fixed at construction.
+	//
+	// This used to be recovered with dynamic_cast every time anything asked, and
+	// everything asks: type(), is_group(), is_target(), as_group(), as_target()
+	// and valid() were each a call into __dynamic_cast, and
+	// recalcSizePosRecursive alone runs several per node per pass - on every
+	// focus change, insert, remove and resize. A node cannot change kind, so
+	// there was nothing to re-derive.
+	const Hy3NodeType m_type;
+
+	explicit Hy3Node(Hy3NodeType type): m_type(type) {}
 };
 
 struct Hy3TargetNode : Hy3Node {
 	WP<Layout::ITarget> target;
+
+	Hy3TargetNode(): Hy3Node(Hy3NodeType::Target) {}
 };
 
 struct Hy3GroupNode : Hy3Node {

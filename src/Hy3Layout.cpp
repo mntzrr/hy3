@@ -590,10 +590,10 @@ void Hy3Layout::swapTargets(SP<Layout::ITarget> a, SP<Layout::ITarget> b) {
 	auto* node_b = this->getNodeFromTarget(b);
 	if (node_a == nullptr && node_b == nullptr) return;
 
-	// findNodeFromTargetRecursive only ever matches a target node, but the cast
-	// is what makes that a compile-time fact rather than an assumption.
+	// findNodeFromTargetRecursive only ever matches a target node, but the check
+	// is what makes that a verified fact rather than an assumption.
 	auto adopt = [](Hy3Node* node, SP<Layout::ITarget> target) {
-		if (auto* target_node = dynamic_cast<Hy3TargetNode*>(node)) target_node->target = target;
+		if (node->is_target()) static_cast<Hy3TargetNode*>(node)->target = target;
 	};
 
 	if (node_a != nullptr) adopt(node_a, b);

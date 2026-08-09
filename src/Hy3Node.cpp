@@ -23,7 +23,7 @@ using Desktop::View::CWindow;
 
 const float MIN_RATIO = 0.0f;
 
-Hy3GroupNode::Hy3GroupNode(Hy3GroupLayout layout): layout(layout) {
+Hy3GroupNode::Hy3GroupNode(Hy3GroupLayout layout): Hy3Node(Hy3NodeType::Group), layout(layout) {
 	if (!isTab()) {
 		this->previous_nontab_layout = layout;
 	}
@@ -35,6 +35,13 @@ bool Hy3Node::is_root_group() { return !is_root() && parent->is_root(); }
 Hy3RootNode::Hy3RootNode(Hy3Layout* layout)
     : Hy3GroupNode(Hy3GroupLayout::Root), algo(layout) {}
 
+// This one keeps its dynamic_cast. m_type does not distinguish Hy3RootNode from
+// any other group, and the thing that would stand in for it - layout == Root -
+// is only an Hy3RootNode by convention: setLayout refuses Root in both
+// directions, but nothing stops Hy3Node::create(Hy3GroupLayout::Root) building
+// a plain group with it. A static_cast on that convention would be undefined
+// behaviour the day it is broken, and this is no longer hot: the per-node
+// caller in recalcSizePosRecursive was hoisted out with the gap lookup.
 Hy3RootNode* Hy3Node::root() {
 	auto* node = this;
 	while (!node->is_root() && node->parent.get() != nullptr) {
@@ -310,31 +317,33 @@ void Hy3GroupNode::setEphemeral(GroupEphemeralityOption ephemeral) {
 	}
 }
 
+// fork: these all read the m_type tag rather than probing the runtime type. See
+// the note on m_type in Hy3Node.hpp - the kind is fixed at construction, and
+// the casts below are checked by the tag first, so they are downcasts to a type
+// this object is already known to have.
 bool Hy3Node::valid() const {
-	if (dynamic_cast<const Hy3GroupNode*>(this)) return true;
-	if (auto* t = dynamic_cast<const Hy3TargetNode*>(this)) return !t->target.expired();
-	return false;
+	if (m_type == Hy3NodeType::Group) return true;
+	return !static_cast<const Hy3TargetNode*>(this)->target.expired();
 }
 
-Hy3NodeType Hy3Node::type() const {
-	if (dynamic_cast<const Hy3GroupNode*>(this)) return Hy3NodeType::Group;
-	if (dynamic_cast<const Hy3TargetNode*>(this)) return Hy3NodeType::Target;
-	throw std::runtime_error("Attempted to get Hy3NodeType of uninitialized Hy3Node data");
-}
+// no longer throws: a node always has a kind now, so there is no uninitialised
+// case left to report
+Hy3NodeType Hy3Node::type() const { return m_type; }
 
-bool Hy3Node::is_group() const { return dynamic_cast<const Hy3GroupNode*>(this) != nullptr; }
+bool Hy3Node::is_group() const { return m_type == Hy3NodeType::Group; }
 
-bool Hy3Node::is_target() const { return dynamic_cast<const Hy3TargetNode*>(this) != nullptr; }
+bool Hy3Node::is_target() const { return m_type == Hy3NodeType::Target; }
 
 Hy3GroupNode& Hy3Node::as_group() {
-	auto* gn = dynamic_cast<Hy3GroupNode*>(this);
-	if (!gn) throw std::runtime_error("Attempted to get group value of a non-group Hy3Node");
-	return *gn;
+	if (m_type != Hy3NodeType::Group)
+		throw std::runtime_error("Attempted to get group value of a non-group Hy3Node");
+	return *static_cast<Hy3GroupNode*>(this);
 }
 
 SP<Layout::ITarget> Hy3Node::as_target() {
-	auto* tn = dynamic_cast<Hy3TargetNode*>(this);
-	if (!tn) throw std::runtime_error("Attempted to get target value of a non-target Hy3Node");
+	if (m_type != Hy3NodeType::Target)
+		throw std::runtime_error("Attempted to get target value of a non-target Hy3Node");
+	auto* tn = static_cast<Hy3TargetNode*>(this);
 	if (tn->target.expired()) throw std::runtime_error("Attempted to upgrade an expired Hy3Node target");
 	return tn->target.lock();
 }
@@ -349,9 +358,8 @@ PHLWINDOW Hy3Node::as_window() {
 // CWindow::unmapWindow and PLUGIN_EXIT, neither of which catches, so an escaping
 // exception is std::terminate. These are the accessors for those paths.
 SP<Layout::ITarget> Hy3Node::try_target() {
-	auto* tn = dynamic_cast<Hy3TargetNode*>(this);
-	if (!tn) return nullptr;
-	return tn->target.lock();
+	if (m_type != Hy3NodeType::Target) return nullptr;
+	return static_cast<Hy3TargetNode*>(this)->target.lock();
 }
 
 PHLWINDOW Hy3Node::try_window() {
