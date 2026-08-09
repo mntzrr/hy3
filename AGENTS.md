@@ -208,11 +208,34 @@ from a hand-run check.
   plugin loaded** — every `plugin:hy3:*` key reads `no such option` and the suite tests
   nothing. `rm -rf build` and rebuild. Do not redirect `start`'s stderr, which is how this was
   missed for two runs.
+- **Moving the nested instance's windows off your workspace fails the suite.** They are the
+  instance's *monitors* — Wayland surfaces on the host — so parking them somewhere they are not
+  visible stops their frame callbacks, the nested compositor stops painting, and every
+  assertion that waits on geometry settling times out. Leave them alone for the ~40s a run
+  takes. Observed; the frame-callback mechanism is the reading of it, not something that was
+  instrumented. Whether a workspace that stays visible on a *second* monitor is good enough
+  follows from that reading — visibility rather than focus being what matters — but is
+  untested.
+
+  It reads exactly like a regression, and it cost four runs. The signature is that **the
+  failure set moves between runs and does not overlap**: 4 failures then 2 on one build; 4, 6
+  and 1 on the unmodified baseline, across `movetomonitor`, `changefocus raise`, window tags
+  and floating `movewindow` — sections with nothing in common. Left alone, the same build
+  passed 104/0.
+
+  Machine load is the tempting explanation and was the wrong one here: the suspect binary had
+  already passed 104/0 at a comparable load average, and `HY3_TEST_TIMEOUT=15` did not clear
+  the failures either. Before blaming load, check the two things above — does the failure set
+  move, and does the baseline fail too.
 - **Establish the baseline before believing a failure is yours.** Those four failures looked
   like a regression in the code under test; `git stash && cmake --build build` and a rerun
   showed the pre-change tree passing every assertion, which pointed straight at the harness
   instead. Restarting the nested instance is required after a rebuild — it holds the old
   `.so` open otherwise.
+
+  This is also what catches the trap above, and it is cheap: `git worktree add --detach
+  <dir> <baseline>`, build there, copy the `.so` over `build/libhy3.so`, restart the instance.
+  A baseline that fails *differently* is a harness problem, not a code one.
 
 ## Hyprland 0.56 config API
 
