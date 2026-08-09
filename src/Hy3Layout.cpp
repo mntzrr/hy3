@@ -1,5 +1,4 @@
 #include <cstdint>
-#include <regex>
 #include <optional>
 #include <set>
 
@@ -28,6 +27,8 @@
 #include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
 #include <hyprland/src/desktop/state/WindowState.hpp>
 #include <ranges>
+#include <algorithm>
+#include <hyprutils/string/VarList.hpp>
 
 #include "log.hpp"
 #include "Hy3Layout.hpp"
@@ -37,6 +38,7 @@
 
 
 using namespace Desktop::View;
+using Hyprutils::String::CVarList;
 
 static CollapsePolicy nodeCollapsePolicy() {
 	static const auto node_collapse_policy =
@@ -2206,20 +2208,21 @@ void Hy3Layout::updateAutotileWorkspaces() {
 	                                                : this->autotile.raw_workspaces;
 
 	// split on space and comma
-	const std::regex regex {R"([\s,]+)"};
-	const auto begin = std::sregex_token_iterator(
-	    autotile_raw_workspaces_filtered.begin(),
-	    autotile_raw_workspaces_filtered.end(),
-	    regex,
-	    -1
-	);
-	const auto end = std::sregex_token_iterator();
+	//
+	// fork: this was a std::regex over [\s,]+, which pulled all of <regex> into
+	// the plugin - one of the heaviest headers in the standard library, and
+	// visibly so: it accounted for a large share of the .so's exported symbol
+	// table and its code size, to split a config string that is usually the
+	// single word "all". CVarList is hyprutils' own splitter, already used by
+	// dispatchers.cpp, and handles runs of separators via removeEmpty.
+	auto separated = autotile_raw_workspaces_filtered;
+	std::ranges::replace(separated, ',', ' ');
 
-	for (auto s = begin; s != end; ++s) {
+	for (const auto& s: CVarList(separated, 0, 's', true)) {
 		try {
-			this->autotile.workspaces.insert(std::stoi(*s));
+			this->autotile.workspaces.insert(std::stoi(s));
 		} catch (...) {
-			hy3_log(ERR, "autotile:workspaces: invalid workspace id: {}", (std::string) *s);
+			hy3_log(ERR, "autotile:workspaces: invalid workspace id: {}", s);
 		}
 	}
 }
