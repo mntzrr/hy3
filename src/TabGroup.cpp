@@ -29,8 +29,8 @@
 #include "log.hpp"
 #include "globals.hpp"
 #include "render.hpp"
-#include "render/Renderer.hpp"
-#include "render/pass/PassElement.hpp"
+#include <hyprland/src/render/Renderer.hpp>
+#include <hyprland/src/render/pass/PassElement.hpp>
 
 using Hyprgraphics::CColor;
 using Desktop::View::IGeometric;

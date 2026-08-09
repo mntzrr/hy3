@@ -2,7 +2,7 @@
 
 #include <optional>
 #include <utility>
-#include "render/pass/PassElement.hpp"
+#include <hyprland/src/render/pass/PassElement.hpp>
 class Hy3TabGroup;
 class Hy3TabBar;
 

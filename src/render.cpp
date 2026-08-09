@@ -8,8 +8,8 @@
 #include <hyprutils/math/Misc.hpp>
 #include <hyprutils/math/Vector2D.hpp>
 
-#include "render/Renderer.hpp"
-#include "render/Texture.hpp"
+#include <hyprland/src/render/Renderer.hpp>
+#include <hyprland/src/render/Texture.hpp>
 #include "shaders.hpp"
 
 using Render::GL::g_pHyprOpenGL;

@@ -14,7 +14,7 @@
 #include "dispatchers.hpp"
 #include "log.hpp"
 #include "globals.hpp"
-#include "src/SharedDefs.hpp"
+#include <hyprland/src/SharedDefs.hpp>
 
 using Hyprutils::String::CVarList;
 namespace LuaInternal = Config::Lua::Bindings::Internal;

@@ -11,7 +11,7 @@
 
 #include "Hy3Layout.hpp"
 #include "TabGroup.hpp"
-#include "config/shared/complex/ComplexDataType.hpp"
+#include <hyprland/src/config/shared/complex/ComplexDataType.hpp>
 
 inline HANDLE PHANDLE = nullptr;
 
