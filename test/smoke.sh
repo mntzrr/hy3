@@ -24,6 +24,11 @@ TIMEOUT=${HY3_TEST_TIMEOUT:-6}
 
 pass=0
 fail=0
+skip=0
+
+# Set by block(), cleared by a failed require(). While clear, the rest of the
+# block reports SKIP instead of running - see require() for why.
+block_ok=1
 
 # Every external command this suite assumes. Missing ones used to surface as a
 # wall of empty jq output and a dozen confusing FAILs.
@@ -40,7 +45,55 @@ ctl() { "$N" ctl "$@"; }
 dispatch() { ctl dispatch "$1" >/dev/null 2>&1; sleep "${2:-0.15}"; }
 clients() { ctl clients -j; }
 
+# Start a block. Resets the precondition state, so a block that fails its
+# require() does not poison the next one.
+block() { # block <name>
+	echo
+	echo "== $1 =="
+	block_ok=1
+}
+
+# Assert the state a block *starts from*, as opposed to what it tests.
+#
+# Blocks inherit the tree the previous ones left, and under load a dispatch that
+# quietly does not land leaves the next block testing a layout that was never
+# set up. Every assertion in it then fails, none of them naming the reason - five
+# movetomonitor failures at once, or three window-tag ones, which reads exactly
+# like a regression in the code under test and is not one. That signature cost
+# several hours of bisecting this session.
+#
+# So the entry state is checked explicitly, and if it is wrong the block reports
+# one PRECONDITION line naming what was missing and skips its assertions rather
+# than emitting a wall of failures about it.
+require() { # require <what> <expected> <cmd...>
+	local what=$1 expected=$2
+	shift 2
+
+	local deadline=$((SECONDS + TIMEOUT)) actual=""
+	while :; do
+		actual=$("$@" 2>/dev/null)
+		if [ "$actual" = "$expected" ]; then
+			printf '  \033[32mPASS\033[0m %s\n' "$what"
+			pass=$((pass + 1))
+			return 0
+		fi
+		[ "$SECONDS" -ge "$deadline" ] && break
+		sleep 0.1
+	done
+
+	block_ok=0
+	printf '  \033[33mPRECONDITION\033[0m %s\n        expected: %s\n        actual:   %s\n' \
+		"$what" "$expected" "$actual"
+	return 1
+}
+
 check() { # check <label> <expected> <actual>
+	if [ "$block_ok" -eq 0 ]; then
+		printf '  \033[33mSKIP\033[0m %s\n' "$1"
+		skip=$((skip + 1))
+		return
+	fi
+
 	if [ "$2" = "$3" ]; then
 		printf '  \033[32mPASS\033[0m %s\n' "$1"
 		pass=$((pass + 1))
@@ -58,6 +111,9 @@ check() { # check <label> <expected> <actual>
 check_eventually() { # check_eventually <label> <expected> <cmd...>
 	local label=$1 expected=$2
 	shift 2
+
+	# skipping: do not spend the timeout polling for it
+	[ "$block_ok" -eq 0 ] && { check "$label" "" ""; return; }
 
 	local deadline=$((SECONDS + TIMEOUT)) actual=""
 	while :; do
@@ -211,7 +267,7 @@ M0_NAME=$(mon_field 0 name); M0="mon$(mon_field 0 id)"
 M1_NAME=$(mon_field 1 name); M1="mon$(mon_field 1 id)"
 echo "monitors: $M0_NAME ($M0) | $M1_NAME ($M1)"
 
-echo "== setup =="
+block "setup"
 # Start from a known monitor. Windows spawn wherever focus happens to be, so a
 # leftover focus on mon1 - from a previous run, or from poking at the instance
 # by hand between runs - silently puts the whole suite on the wrong screen and
@@ -224,8 +280,8 @@ A=$(addr_of t_a); B=$(addr_of t_b)
 [ -n "$A" ] && [ -n "$B" ] || { echo "could not spawn test windows" >&2; exit 1; }
 check_eventually "two windows tiled on mon0" "$M0 $M0" where2 "$A" "$B"
 
-echo
-echo "== hy3:movetomonitor =="
+block "hy3:movetomonitor"
+require "t_b starts on mon0" "$M0" where "$B" 
 focus "$B"
 dispatch "hl.plugin.hy3.move_to_monitor('+1')"
 check_eventually "'+1' moves the node"                    "$M1"      where "$B"
@@ -252,8 +308,8 @@ focus "$B"
 dispatch "hl.plugin.hy3.move_to_monitor('$M0_NAME')"
 check_eventually "monitor name resolves"                  "$M0"      where "$B"
 
-echo
-echo "== hy3:movewindow monitor fallthrough =="
+block "hy3:movewindow monitor fallthrough"
+require "t_b starts on mon0" "$M0" where "$B"
 setflag movewindow_monitor_fallthrough false
 focus "$B"
 for _ in 1 2 3; do dispatch "hl.plugin.hy3.move_window('r')" 0.3; done
@@ -283,8 +339,8 @@ check_eventually "flag on: node crossed the edge again"   "$M1"      where "$B"
 for _ in 1 2 3; do dispatch "hl.plugin.hy3.move_window('r')" 0.4; done
 check_eventually "outermost edge does not lose the node"  "$M1"      where "$B"
 
-echo
-echo "== tab group moves intact =="
+block "tab group moves intact"
+require "both windows exist" "$M0 $M1" where2 "$A" "$B"
 focus "$B"
 dispatch "hl.plugin.hy3.move_to_monitor('-1',{follow=true})"
 settle_until where_is "$B" "$M0"
@@ -300,15 +356,14 @@ check_eventually "group still tabbed after the move"      "same"        geom_cmp
 dispatch "hl.plugin.hy3.change_focus('lower')" 0.3
 dispatch "hl.plugin.hy3.change_group('untab')" 0.4
 
-echo
-echo "== special_focus_trap =="
+block "special_focus_trap"
 # park t_b on mon1 and open the scratchpad on mon0, so that escaping left to
 # right has somewhere to land. focusMonitor only changes the active window if
 # the target monitor actually has one, so an empty neighbour would make this
 # look like the trap fired when it did not.
 focus "$B"
 [ "$(where "$B")" = "$M1" ] || dispatch "hl.plugin.hy3.move_to_monitor('+1',{follow=true})" 0.5
-check_eventually "neighbour monitor has a window"         "$M1" where "$B"
+require          "neighbour monitor has a window"         "$M1" where "$B"
 
 focus "$A"
 [ "$(where "$A")" = "$M0" ] || dispatch "hl.plugin.hy3.move_to_monitor('-1',{follow=true})" 0.5
@@ -343,8 +398,7 @@ for _ in 1 2 3 4 5 6; do dispatch "hl.plugin.hy3.move_focus('r')"; done
 check_eventually "flag on: focus stays on the scratchpad" "$M0_NAME"  focused_mon
 check_eventually "flag on: still on the scratchpad"       "special:t" active_ws
 
-echo
-echo "== hy3:togglefloating =="
+block "hy3:togglefloating"
 # The three toggles below only mean "unmount, float on, float off" if the first
 # one finds t_a on the scratchpad. If it does not, each one shifts by a step:
 # the block ends with t_a floating rather than tiled, both float assertions
@@ -352,7 +406,7 @@ echo "== hy3:togglefloating =="
 # precondition so that goes wrong here, by name, instead of resurfacing later
 # as an unrelated-looking geometry failure.
 focus "$A"
-check_eventually "starts on the scratchpad"               "true"  on_special "$A"
+require          "starts on the scratchpad"               "true"  on_special "$A"
 dispatch "hl.plugin.hy3.toggle_floating()" 0.5
 check_eventually "unmounts off the scratchpad"            "false" on_special "$A"
 check_eventually "focus follows the unmounted window"     "$A"    active_addr
@@ -361,8 +415,7 @@ check_eventually "toggles floating on"                    "true"  is_floating "$
 dispatch "hl.plugin.hy3.toggle_floating()" 0.4
 check_eventually "toggles floating off"                   "false" is_floating "$A"
 
-echo
-echo "== backported upstream fixes =="
+block "backported upstream fixes"
 
 # #302: setLayout used to mutate the workspace root group, which every
 # is_root() assumption downstream then tripped over (SIGABRT on the next focus
@@ -487,8 +540,7 @@ dispatch "hl.plugin.hy3.change_focus('raise')" 0.3
 dispatch "hl.plugin.hy3.change_group('untab')" 0.4
 dispatch "hl.plugin.hy3.change_focus('lower')" 0.3
 
-echo
-echo "== fixes to upstream bugs =="
+block "fixes to upstream bugs"
 
 # #332: getNodeFromTarget walks *every* target in the tree looking for one, and
 # it dereferenced each with as_target(), which throws on an expired weak
@@ -598,8 +650,7 @@ dispatch "hl.plugin.hy3.make_group('tab',{toggle=true})" 0.5
 check_eventually "#192 toggling off reclaims the gap"      "$BARE_TOP" top_of "$S"
 check "#192 instance survived the toggle"                  "yes"       "$(alive)"
 
-echo
-echo "== hy3:movewindow on floating windows =="
+block "hy3:movewindow on floating windows"
 # A floating window is not in the hy3 tree, so getWorkspaceFocusedNode hands
 # back whatever tiled node last had focus and upstream moves that one instead -
 # a window the user is not looking at (#223). The first two assertions are the
@@ -691,8 +742,7 @@ dispatch "hl.plugin.hy3.move_window('r')" 0.5
 check_eventually "at the edge, it falls through to mon1" "$M1" where "$FL"
 check "instance survived the floating moves"             "yes" "$(alive)"
 
-echo
-echo "== tree edits while a floating window has focus =="
+block "tree edits while a floating window has focus"
 # The quiet half of the same problem: makegroup and friends also act on the
 # node getWorkspaceFocusedNode hands back, so they restructured the tiled tree
 # behind the floating window the user was looking at. Nothing moves where the
@@ -738,8 +788,7 @@ dispatch "hl.plugin.hy3.make_group('tab')" 0.6
 check_eventually "with tiled focus it still tabs"        "true" below "$P" "$TOP"
 check "instance survived the tree edits"                 "yes" "$(alive)"
 
-echo
-echo "== #327 window tags =="
+block "#327 window tags"
 # Backported feature, gated behind plugin:hy3:tag_windows. Tags are synced from
 # the tree mutation primitives, so turning the flag on does not retroactively
 # tag an existing tree - the "off" phase has to come first and leave the tree
@@ -758,6 +807,7 @@ spawn t_l || { echo "could not spawn t_l" >&2; exit 1; }
 spawn t_m || { echo "could not spawn t_m" >&2; exit 1; }
 L=$(addr_of t_l); M=$(addr_of t_m)
 [ -n "$L" ] && [ -n "$M" ] || { echo "could not spawn the tag windows" >&2; exit 1; }
+require "tag windows spawned on mon0" "$M0 $M0" where2 "$L" "$M"
 
 focus "$M"
 dispatch "hl.plugin.hy3.make_group('tab')" 0.5
@@ -798,8 +848,7 @@ check_eventually "and is undone when the tag goes"       "yes" tagrule_restored
 check "instance survived the tag syncing"                "yes" "$(alive)"
 setflag tag_windows false
 
-echo
-echo "== #211 swapTargets =="
+block "#211 swapTargets"
 # Hy3Layout::swapTargets was an empty `// todo` upstream, which made hyprland's
 # own swap dispatchers silent no-ops under hy3. Everything below drives
 # hyprland's dispatcher rather than a hy3 one - the fix is that a dispatcher
@@ -884,8 +933,7 @@ dispatch "hl.plugin.hy3.equalize()" 0.4
 check_eventually "the tiled slot lays out the window it adopted" "$TILED_SLOT" geom "$SW_O"
 check "instance survived the swaps"                      "yes" "$(alive)"
 
-echo
-echo "== #197 changefocus raise =="
+block "#197 changefocus raise"
 # `raise` at the workspace group has nowhere further up, and upstream answers
 # that by wrapping to the bottom: one press past the top undoes the whole walk
 # and leaves a single window focused. plugin:hy3:changefocus_raise_stops makes
@@ -935,11 +983,18 @@ check_eventually "on: lower still walks back down"              "$RS_U" active_a
 check "instance survived the raises"                            "yes" "$(alive)"
 setflag changefocus_raise_stops false
 
-echo
-echo "== teardown =="
+block "teardown"
 cleanup_windows
 check "instance survived the run"              "yes" "$(alive)"
 
 echo
-printf 'passed %d, failed %d\n' "$pass" "$fail"
-[ "$fail" -eq 0 ]
+if [ "$skip" -gt 0 ]; then
+	printf 'passed %d, failed %d, skipped %d\n' "$pass" "$fail" "$skip"
+else
+	printf 'passed %d, failed %d\n' "$pass" "$fail"
+fi
+# A skipped block is an *untested* one, so it is not a pass. The distinction
+# this whole mechanism exists to draw is between "the code is broken" and "the
+# harness never set the block up" - both are a red run, but only one of them is
+# about the plugin.
+[ "$fail" -eq 0 ] && [ "$skip" -eq 0 ]

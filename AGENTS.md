@@ -97,7 +97,7 @@ Use the throwaway instance instead:
 
 ```sh
 test/nested.sh start 2   # throwaway Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 106 assertions over the fork's behaviour
+test/smoke.sh            # 110 assertions over the fork's behaviour
 test/nested.sh stop
 ```
 
@@ -264,6 +264,16 @@ from a hand-run check.
   already passed 104/0 at a comparable load average, and `HY3_TEST_TIMEOUT=15` did not clear
   the failures either. Before blaming load, check the two things above — does the failure set
   move, and does the baseline fail too.
+- **A `PRECONDITION` line means the harness, not the plugin.** Blocks inherit the tree the
+  previous ones left, and under load a dispatch that quietly does not land leaves the next
+  block testing a layout that was never set up — which surfaces as every assertion in it
+  failing at once, none of them naming the reason. `require` checks a block's entry state, and
+  on failure prints one `PRECONDITION` line and reports the rest of the block as `SKIP`. A run
+  with skips exits non-zero: a skipped block is an untested one, not a passing one. Read the
+  `PRECONDITION` line first and ignore the skips; the assertions after it were never run.
+
+  It does not isolate blocks completely — they are a chain, and a skipped one still denies its
+  side effects to later blocks. Expect a couple of genuine failures downstream of a skip.
 - **Establish the baseline before believing a failure is yours.** Those four failures looked
   like a regression in the code under test; `git stash && cmake --build build` and a rerun
   showed the pre-change tree passing every assertion, which pointed straight at the harness
