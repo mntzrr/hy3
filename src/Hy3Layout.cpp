@@ -1894,12 +1894,32 @@ Hy3Node* Hy3Layout::getWorkspaceFocusedNodeIfTiled(
 	return this->getWorkspaceFocusedNode(workspace, ignore_group_focus, stop_at_expanded);
 }
 
-Hy3Node* Hy3Layout::getNodeFromWindow(const CWindow* window) {
-	if (!this->root || !window) return nullptr;
-	for (auto& w: this->root->windows()) {
-		if (&w == window) return getNodeFromTarget(w.layoutTarget());
+static Hy3Node* findNodeFromWindowRecursive(Hy3Node* node, const CWindow* window) {
+	if (!node) return nullptr;
+	if (node->is_target()) return node->try_window().get() == window ? node : nullptr;
+
+	for (auto& child: node->as_group().children) {
+		if (auto* result = findNodeFromWindowRecursive(child.get(), window)) return result;
 	}
+
 	return nullptr;
+}
+
+// fork: one walk, not two.
+//
+// This used to drive the windows() coroutine over the whole tree looking for a
+// matching address, and then, having found the window it wanted, throw that
+// away and call getNodeFromTarget - which walks the entire tree a second time
+// to find the node it had just been standing on. Quadratic, with a coroutine
+// frame per window on top.
+//
+// It matters because of who calls it: every focus change, every window title
+// change - which for a terminal reporting its running command is a keystroke
+// away - every urgency hint, and once per window inside shouldRenderSelected
+// whenever a group rather than a window holds focus.
+Hy3Node* Hy3Layout::getNodeFromWindow(const CWindow* window) {
+	if (!window) return nullptr;
+	return findNodeFromWindowRecursive(this->root.get(), window);
 }
 
 static Hy3Node* findNodeFromTargetRecursive(Hy3Node* node, SP<Layout::ITarget> target) {

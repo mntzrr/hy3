@@ -6,6 +6,10 @@ struct Hy3GroupNode;
 struct Hy3RootNode;
 enum class Hy3GroupLayout;
 
+namespace Config {
+	class CCssGapData;
+}
+
 #include <generator>
 
 #include <hyprland/src/defines.hpp>
@@ -103,6 +107,10 @@ struct Hy3Node {
 	Hy3Node& getPlacementActor();
 
 	void recalcSizePosRecursive(CBox offsets, bool no_animation = false);
+	// fork: the traversal proper. The entry point above resolves the workspace's
+	// gaps once and hands them down, rather than every group node re-asking the
+	// rule manager for them - see Hy3Node.cpp.
+	void recalcSizePosRecursive(CBox offsets, bool no_animation, const Config::CCssGapData& gaps_in);
 	void updateTabBar(bool no_animation = false);
 	void updateTabBarRecursive();
 	void updateDecos();

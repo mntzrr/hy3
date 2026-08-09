@@ -479,9 +479,39 @@ Hy3Node& Hy3Node::getPlacementActor() {
 	return *this;
 }
 
+// fork: resolve the workspace's gaps once, then run the traversal.
+//
+// This lookup used to sit inside the recursion, so every group node in the tree
+// asked the rule manager for the workspace rule on every geometry pass - and
+// getWorkspaceRuleFor returns std::optional<CWorkspaceRule> *by value*, a full
+// struct copy with strings and vectors in it. Geometry is recalculated on every
+// focus change, insert, remove and resize, so this was the plugin's single
+// hottest allocation source.
+//
+// Hoisting is not just cheaper, it is more correct: every node in one tree
+// belongs to one space, so they must all use the same gaps. Resolving per node
+// meant a child whose parent chain was momentarily detached - layoutWorkspace()
+// returns null for those - silently fell back to the global general:gaps_in
+// while its siblings used the workspace rule's.
 void Hy3Node::recalcSizePosRecursive(CBox offsets, bool no_animation) {
-	// clang-format off
 	static const auto p_gaps_in = CConfigValue<Config::IComplexConfigValue>("general:gaps_in");
+
+	auto ws = this->layoutWorkspace();
+	// ::valid - Hy3Node::valid() is a different, argument-less thing and shadows it
+	auto workspace_rule = ::valid(ws) ? Config::workspaceRuleMgr()->getWorkspaceRuleFor(ws)
+	                                  : std::optional<Config::CWorkspaceRule>();
+	auto gaps_in = workspace_rule.and_then([](auto r) { return r.m_gapsIn; })
+	                   .value_or(*sc<Config::CCssGapData*>(p_gaps_in.ptr()));
+
+	this->recalcSizePosRecursive(offsets, no_animation, gaps_in);
+}
+
+void Hy3Node::recalcSizePosRecursive(
+    CBox offsets,
+    bool no_animation,
+    const Config::CCssGapData& gaps_in
+) {
+	// clang-format off
 	static const auto tab_bar_height = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:height");
 	static const auto tab_bar_padding = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:padding");
 	static const auto group_inset = CConfigValue<Config::INTEGER>("plugin:hy3:group_inset");
@@ -522,14 +552,6 @@ void Hy3Node::recalcSizePosRecursive(CBox offsets, bool no_animation) {
 	auto tsize = this->visualBox.size();
 
 	auto& group = this->as_group();
-	// fork: layoutWorkspace(), and only ask for a rule when there is a workspace
-	// to ask about. layout() is null for a detached node, and this dereference -
-	// inside recalcSizePosRecursive - is the frame upstream #241 crashes in.
-	auto ws = this->layoutWorkspace();
-	// ::valid - Hy3Node::valid() is a different, argument-less thing and shadows it
-	auto workspace_rule = ::valid(ws) ? Config::workspaceRuleMgr()->getWorkspaceRuleFor(ws)
-	                                  : std::optional<Config::CWorkspaceRule>();
-	auto gaps_in = workspace_rule.and_then([](auto r) { return r.m_gapsIn; }).value_or(*sc<Config::CCssGapData*>(p_gaps_in.ptr()));
 
 	auto expand_focused = group.expand_focused != ExpandFocusType::NotExpanded;
 	bool directly_contains_expanded =
@@ -562,7 +584,7 @@ void Hy3Node::recalcSizePosRecursive(CBox offsets, bool no_animation) {
 		expanded_node->visualBox = CBox(tpos, tsize);
 		expanded_node->setHidden(this->hidden);
 
-		expanded_node->recalcSizePosRecursive(offsets, no_animation);
+		expanded_node->recalcSizePosRecursive(offsets, no_animation, gaps_in);
 	}
 
 	// Compute constraint for splits: total visible space minus inter-child gaps
@@ -618,7 +640,7 @@ void Hy3Node::recalcSizePosRecursive(CBox offsets, bool no_animation) {
 			offset += child_w;
 			if (!is_last) offset += inter_gap;
 
-			child->recalcSizePosRecursive(child_offsets, no_animation);
+			child->recalcSizePosRecursive(child_offsets, no_animation, gaps_in);
 			break;
 		}
 		case Hy3GroupLayout::SplitV: {
@@ -635,7 +657,7 @@ void Hy3Node::recalcSizePosRecursive(CBox offsets, bool no_animation) {
 			offset += child_h;
 			if (!is_last) offset += inter_gap;
 
-			child->recalcSizePosRecursive(child_offsets, no_animation);
+			child->recalcSizePosRecursive(child_offsets, no_animation, gaps_in);
 			break;
 		}
 		case Hy3GroupLayout::Tabbed: {
@@ -650,13 +672,13 @@ void Hy3Node::recalcSizePosRecursive(CBox offsets, bool no_animation) {
 			child_offsets.w = offsets.w;
 			child_offsets.h = offsets.h;
 
-			child->recalcSizePosRecursive(child_offsets, no_animation);
+			child->recalcSizePosRecursive(child_offsets, no_animation, gaps_in);
 			break;
 		}
 		case Hy3GroupLayout::Root: {
 			child->visualBox = CBox(tpos, tsize);
 			child->hidden = this->hidden;
-			child->recalcSizePosRecursive(offsets, no_animation);
+			child->recalcSizePosRecursive(offsets, no_animation, gaps_in);
 			break;
 		}
 		}
