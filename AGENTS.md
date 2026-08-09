@@ -150,6 +150,24 @@ from a hand-run check.
 - **hy3's own `hy3_log` output never reaches the instance log**, at any level, including `ERR`
   and with `debug:disable_logs = false`. Do not waste a build cycle adding log instrumentation.
   Behaviour observed over `hyprctl` is the only practical oracle.
+
+  Confirmed again in the nested harness, and it is worth knowing *why*, because the obvious
+  theory is wrong and leads to a wasted afternoon. The logger is **not** duplicated: hyprland
+  declares `inline UP<CLogger> logger` in `debug/log/Logger.hpp`, GCC emits it as
+  `STB_GNU_UNIQUE` (`u` in `nm`), and the dynamic linker unifies hy3's copy with the
+  compositor's. hy3 is writing to hyprland's real logger.
+
+  It goes nowhere because **hyprland's own core logging goes nowhere either**. With
+  `debug:disable_logs` verified `false` via `getoption -j`, the instance log gained 582 lines
+  from aquamarine and *zero* from hyprland's core, holding at the 18 DEBUG lines written during
+  early startup. Aquamarine is a separate library with its own logger, which is why it is the
+  only thing still reaching the file. So this is not an hy3 problem and no plugin-side change
+  fixes it.
+
+  The useful corollary: **`[hy3]` lines appearing on stdout are a symptom, not a success.** That
+  happens when hy3 gets its *own* `Log::logger` - an uninitialised `CLogger` that has never had
+  `initIS` called and so defaults to stdout, bypassing the config gate. If you see them, the
+  build has broken symbol unification; see the `-fvisibility` trap under Build.
 - **Assert on the focused monitor, not on the active window's workspace.** A scratchpad follows
   whichever monitor gains focus, so a window on it stays "active" whether or not focus actually
   left the monitor.
@@ -251,3 +269,41 @@ refuses to load on a hash mismatch. Compare `hyprctl version` with `GIT_COMMIT_H
 needing a session. It deliberately does **not** gate formatting — the tree does not match
 its own `.clang-format`, and reformatting a fork that rebases would conflict with every
 future upstream commit.
+
+### Never add `-fvisibility=hidden`
+
+The plugin exports ~915 dynamic symbols and it is tempting to think that is sloppy. Hiding
+them builds clean, links clean, passes `-Wall -Wextra` with zero warnings, cuts the count to
+168 — and segfaults the compositor on the first dispatcher that touches a hyprland manager.
+It reached the nested harness before anything caught it.
+
+Hyprland hands plugins its managers as **inline variables in headers**:
+`inline UP<CPluginSystem> g_pPluginSystem;` in `plugins/PluginSystem.hpp`,
+`inline UP<CCompositor> g_pCompositor;` in `Compositor.hpp`, and so on. An inline variable is
+emitted into every object file that uses it and relies on the dynamic linker unifying those
+copies at load time, which only happens while they keep default visibility. GCC emits them
+`STB_GNU_UNIQUE` — `u` in `nm -D`. Hide them and each becomes a plain local BSS symbol (`b`),
+so hy3 gets its own zero-initialised copy of every manager pointer and the first call through
+one dereferences an empty `UP`. Observed as:
+
+```
+#5  CPluginSystem::getAllPlugins            (Hyprland)
+#6  Hy3Layout::moveNodeToWorkspace          (libhy3.so)
+```
+
+`Log::logger` goes the same way, which is where the stdout `[hy3]` lines under Verification
+traps come from. So do the vtables and typeinfo of hyprland classes hy3 instantiates, and any
+function-local static inside a hyprland inline function. **There is no partial version of this
+that is safe** — `-fvisibility-inlines-hidden` alone still duplicates those statics.
+
+To check a build has not lost unification:
+
+```sh
+nm -D --defined-only build/libhy3.so | grep g_pPluginSystem   # must print, and be 'u' not 'b'
+```
+
+What *is* safe, and is why the file-local helpers in `Hy3Layout.cpp`, `Hy3Node.cpp` and
+`TabGroup.cpp` are marked `static`, is keeping hy3's **own** symbols out of the table. Nothing
+outside the plugin references them, and that alone removed the genuinely risky names — bare
+`reverse(ShiftDirection)`, `getAxis(ShiftDirection)`, `findTabBarAt(...)` — which another
+plugin in the same process could otherwise interpose on.
