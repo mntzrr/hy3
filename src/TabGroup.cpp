@@ -699,7 +699,7 @@ void Hy3TabGroup::tick() {
 
 		if (!has_fullscreen && *no_gaps_when_only) {
 			auto* hy3 = hy3InstanceForWorkspace(this->workspace);
-			auto root_node = hy3 ? hy3->getWorkspaceRootGroup(this->workspace.get()) : nullptr;
+			auto root_node = hy3 ? hy3->getWorkspaceRootGroup() : nullptr;
 			has_fullscreen = root_node != nullptr && root_node->as_group().children.size() == 1
 			              && root_node->as_group().children.front()->is_target();
 		}

@@ -128,18 +128,13 @@ public:
 	void onWindowFocusChange(PHLWINDOW window);
 	void updateGroupBorderColors();
 
-	void makeGroupOnWorkspace(
-	    const CWorkspace* workspace,
-	    Hy3GroupLayout,
-	    GroupEphemeralityOption,
-	    bool toggle
-	);
-	void makeOppositeGroupOnWorkspace(const CWorkspace* workspace, GroupEphemeralityOption);
-	void changeGroupOnWorkspace(const CWorkspace* workspace, Hy3GroupLayout);
-	void untabGroupOnWorkspace(const CWorkspace* workspace);
-	void toggleTabGroupOnWorkspace(const CWorkspace* workspace);
-	void changeGroupToOppositeOnWorkspace(const CWorkspace* workspace);
-	void changeGroupEphemeralityOnWorkspace(const CWorkspace* workspace, bool ephemeral);
+	void makeGroupOnWorkspace(Hy3GroupLayout, GroupEphemeralityOption, bool toggle);
+	void makeOppositeGroupOnWorkspace(GroupEphemeralityOption);
+	void changeGroupOnWorkspace(Hy3GroupLayout);
+	void untabGroupOnWorkspace();
+	void toggleTabGroupOnWorkspace();
+	void changeGroupToOppositeOnWorkspace();
+	void changeGroupEphemeralityOnWorkspace(bool ephemeral);
 	void makeGroupOn(Hy3Node&, Hy3GroupLayout, GroupEphemeralityOption);
 	void makeOppositeGroupOn(Hy3Node&, GroupEphemeralityOption);
 	void changeGroupOn(Hy3Node&, Hy3GroupLayout);
@@ -156,15 +151,14 @@ public:
 	    bool warp = false
 	);
 	void shiftWindow(
-	    const CWorkspace* workspace,
 	    ShiftDirection,
 	    bool once,
 	    bool visible,
 	    bool monitor_fallthrough = false,
 	    bool warp = false
 	);
-	void shiftFocus(const CWorkspace* workspace, ShiftDirection, bool visible, bool warp);
-	void toggleFocusLayer(const CWorkspace* workspace, bool warp);
+	void shiftFocus(ShiftDirection, bool visible, bool warp);
+	void toggleFocusLayer(bool warp);
 	bool shiftMonitor(Hy3Node&, ShiftDirection, bool follow, bool warp = false);
 	// focusMonitor focuses the target itself. Callers must not focus the
 	// returned node again - see the note in shiftOrGetFocus.
@@ -180,19 +174,13 @@ public:
 
 	void warpCursor();
 	void moveNodeToWorkspace(CWorkspace* origin, std::string wsname, bool follow, bool warp);
-	void changeFocus(const CWorkspace* workspace, FocusShift);
-	void focusTab(
-	    const CWorkspace* workspace,
-	    TabFocus target,
-	    TabFocusMousePriority,
-	    bool wrap_scroll,
-	    int index
-	);
-	void setNodeSwallow(const CWorkspace* workspace, SetSwallowOption);
-	void killFocusedNode(const CWorkspace* workspace);
-	void expand(const CWorkspace* workspace, ExpandOption, ExpandFullscreenOption);
-	void setTabLock(const CWorkspace* workspace, TabLockMode);
-	void equalize(const CWorkspace* workspace, bool recursive = false);
+	void changeFocus(FocusShift);
+	void focusTab(TabFocus target, TabFocusMousePriority, bool wrap_scroll, int index);
+	void setNodeSwallow(SetSwallowOption);
+	void killFocusedNode();
+	void expand(ExpandOption, ExpandFullscreenOption);
+	void setTabLock(TabLockMode);
+	void equalize(bool recursive = false);
 	static void warpCursorToBox(const Vector2D& pos, const Vector2D& size);
 	static void warpCursorWithFocus(const Vector2D& pos, bool force = false);
 	static std::string debugNodes();
@@ -201,9 +189,8 @@ public:
 	PHLWINDOW findTiledWindowCandidate(const Desktop::View::CWindow* from);
 	PHLWINDOW findFloatingWindowCandidate(const Desktop::View::CWindow* from);
 
-	Hy3Node* getWorkspaceRootGroup(const CWorkspace* workspace);
+	Hy3Node* getWorkspaceRootGroup();
 	Hy3Node* getWorkspaceFocusedNode(
-	    const CWorkspace* workspace,
 	    bool ignore_group_focus = false,
 	    bool stop_at_expanded = false
 	);
@@ -211,7 +198,6 @@ public:
 	// fork: null while a floating window holds focus - for the dispatchers that
 	// reshape the tiled tree, which must not do that behind a floating window.
 	Hy3Node* getWorkspaceFocusedNodeIfTiled(
-	    const CWorkspace* workspace,
 	    bool ignore_group_focus = false,
 	    bool stop_at_expanded = false
 	);

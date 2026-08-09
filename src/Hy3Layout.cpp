@@ -245,7 +245,7 @@ Hy3Node* Hy3Layout::insertNode(UP<Hy3Node> node_up, std::optional<Vector2D> foca
 	Hy3Node* opening_into;
 	Hy3Node* opening_after = nullptr;
 
-	auto* rootNode = this->getWorkspaceRootGroup(ws.get());
+	auto* rootNode = this->getWorkspaceRootGroup();
 
 	if (rootNode != nullptr) {
 		if (focalPoint) {
@@ -713,7 +713,7 @@ std::optional<Vector2D> Hy3Layout::predictSizeForNewTarget() {
 
 	// an empty workspace: the first window is the root group's only child and
 	// gets the whole work area
-	auto* root_group = this->getWorkspaceRootGroup(nullptr);
+	auto* root_group = this->getWorkspaceRootGroup();
 	if (root_group == nullptr) return work_area.size() - gap_inset;
 
 	auto* opening_after = &root_group->getFocusedNode().getPlacementActor();
@@ -766,7 +766,7 @@ SP<Layout::ITarget> Hy3Layout::getNextCandidate(SP<Layout::ITarget> old) {
 }
 
 PHLWINDOW Hy3Layout::findTiledWindowCandidate(const CWindow* from) {
-	auto* node = this->getWorkspaceFocusedNode(from->m_workspace.get(), true);
+	auto* node = this->getWorkspaceFocusedNode(true);
 	if (node != nullptr && node->is_target()) {
 		// fork: this is the focus-successor search run while a window is closing,
 		// so meeting an expired target here is ordinary, not exceptional
@@ -791,12 +791,11 @@ PHLWINDOW Hy3Layout::findFloatingWindowCandidate(const CWindow* from) {
 }
 
 void Hy3Layout::makeGroupOnWorkspace(
-    const CWorkspace* workspace,
     Hy3GroupLayout layout,
     GroupEphemeralityOption ephemeral,
     bool toggle
 ) {
-	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace);
+	auto* node = this->getWorkspaceFocusedNodeIfTiled();
 	if (node == nullptr) return;
 	node = &node->getPlacementActor();
 
@@ -837,50 +836,47 @@ void Hy3Layout::makeGroupOnWorkspace(
 	this->makeGroupOn(*node, layout, ephemeral);
 }
 
-void Hy3Layout::makeOppositeGroupOnWorkspace(
-    const CWorkspace* workspace,
-    GroupEphemeralityOption ephemeral
-) {
-	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace);
+void Hy3Layout::makeOppositeGroupOnWorkspace(GroupEphemeralityOption ephemeral) {
+	auto* node = this->getWorkspaceFocusedNodeIfTiled();
 	if (node == nullptr) return;
 	node = &node->getPlacementActor();
 	this->makeOppositeGroupOn(*node, ephemeral);
 }
 
-void Hy3Layout::changeGroupOnWorkspace(const CWorkspace* workspace, Hy3GroupLayout layout) {
-	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace);
+void Hy3Layout::changeGroupOnWorkspace(Hy3GroupLayout layout) {
+	auto* node = this->getWorkspaceFocusedNodeIfTiled();
 	if (node == nullptr) return;
 	node = &node->getPlacementActor();
 
 	this->changeGroupOn(*node, layout);
 }
 
-void Hy3Layout::untabGroupOnWorkspace(const CWorkspace* workspace) {
-	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace);
+void Hy3Layout::untabGroupOnWorkspace() {
+	auto* node = this->getWorkspaceFocusedNodeIfTiled();
 	if (node == nullptr) return;
 	node = &node->getPlacementActor();
 
 	this->untabGroupOn(*node);
 }
 
-void Hy3Layout::toggleTabGroupOnWorkspace(const CWorkspace* workspace) {
-	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace);
+void Hy3Layout::toggleTabGroupOnWorkspace() {
+	auto* node = this->getWorkspaceFocusedNodeIfTiled();
 	if (node == nullptr) return;
 	node = &node->getPlacementActor();
 
 	this->toggleTabGroupOn(*node);
 }
 
-void Hy3Layout::changeGroupToOppositeOnWorkspace(const CWorkspace* workspace) {
-	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace);
+void Hy3Layout::changeGroupToOppositeOnWorkspace() {
+	auto* node = this->getWorkspaceFocusedNodeIfTiled();
 	if (node == nullptr) return;
 	node = &node->getPlacementActor();
 
 	this->changeGroupToOppositeOn(*node);
 }
 
-void Hy3Layout::changeGroupEphemeralityOnWorkspace(const CWorkspace* workspace, bool ephemeral) {
-	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace);
+void Hy3Layout::changeGroupEphemeralityOnWorkspace(bool ephemeral) {
+	auto* node = this->getWorkspaceFocusedNodeIfTiled();
 	if (node == nullptr) return;
 	node = &node->getPlacementActor();
 
@@ -976,7 +972,6 @@ void Hy3Layout::shiftNode(
 }
 
 void Hy3Layout::shiftWindow(
-    const CWorkspace* workspace,
     ShiftDirection direction,
     bool once,
     bool visible,
@@ -1029,7 +1024,7 @@ void Hy3Layout::shiftWindow(
 		return;
 	}
 
-	auto* node = this->getWorkspaceFocusedNode(workspace);
+	auto* node = this->getWorkspaceFocusedNode();
 	if (node == nullptr) return;
 
 	this->shiftNode(
@@ -1043,7 +1038,6 @@ void Hy3Layout::shiftWindow(
 }
 
 void Hy3Layout::shiftFocus(
-    const CWorkspace* workspace,
     ShiftDirection direction,
     bool visible,
     bool warp
@@ -1076,7 +1070,7 @@ void Hy3Layout::shiftFocus(
 		}
 	}
 
-	auto* node = this->getWorkspaceFocusedNode(workspace);
+	auto* node = this->getWorkspaceFocusedNode();
 	if (node == nullptr) {
 		focusMonitor(direction, warp);
 		return;
@@ -1218,7 +1212,7 @@ static void refocusMonitor(PHLMONITOR monitor) {
 	// the nofollow path, so only what it cannot serve is left here: a workspace
 	// with nothing in the hy3 tree, holding floating windows only.
 	if (auto* hy3 = hy3InstanceForWorkspace(workspace)) {
-		if (hy3->getWorkspaceFocusedNode(workspace.get()) != nullptr) return;
+		if (hy3->getWorkspaceFocusedNode() != nullptr) return;
 	}
 
 	// the window that was just moved away is still this workspace's last
@@ -1302,7 +1296,7 @@ void Hy3Layout::toggleFloating(CWorkspace* workspace, const std::string& unmount
 	ws->m_space->toggleTargetFloating(window->layoutTarget());
 }
 
-void Hy3Layout::toggleFocusLayer(const CWorkspace* workspace, bool warp) {
+void Hy3Layout::toggleFocusLayer(bool warp) {
 	auto current_window = Desktop::focusState()->window();
 	if (!current_window) return;
 
@@ -1328,8 +1322,7 @@ void Hy3Layout::warpCursor() {
 	if (current_window != nullptr) {
 		Hy3Layout::warpCursorWithFocus(current_window->middle(), true);
 	} else {
-		auto* node =
-		    this->getWorkspaceFocusedNode(Desktop::focusState()->monitor()->m_activeWorkspace.get());
+		auto* node = this->getWorkspaceFocusedNode();
 
 		if (node != nullptr) {
 			Hy3Layout::warpCursorWithFocus(node->visualBox.pos() + node->visualBox.size() / 2);
@@ -1364,7 +1357,7 @@ void Hy3Layout::moveNodeToWorkspace(
 
 	if (origin == workspace.get()) return;
 
-	auto* node = this->getWorkspaceFocusedNode(origin);
+	auto* node = this->getWorkspaceFocusedNode();
 	auto focused_window = Desktop::focusState()->window();
 	auto* focused_window_node = this->getNodeFromWindow(focused_window.get());
 
@@ -1497,19 +1490,19 @@ void Hy3Layout::moveNodeToWorkspace(
 		// Ask hy3 rather than getLastFocusedWindow(): that still names the
 		// window just moved away, and focusing it would chase it to its new
 		// workspace.
-		auto* refocus = this->getWorkspaceFocusedNode(origin);
+		auto* refocus = this->getWorkspaceFocusedNode();
 		if (refocus != nullptr) {
 			refocus->focus(false, Desktop::FOCUS_REASON_KEYBIND);
 		}
 	}
 }
 
-void Hy3Layout::changeFocus(const CWorkspace* workspace, FocusShift shift) {
+void Hy3Layout::changeFocus(FocusShift shift) {
 	// fork: see the Raise case below
 	static const auto raise_stops =
 	    CConfigValue<Config::INTEGER>("plugin:hy3:changefocus_raise_stops");
 
-	auto* node = this->getWorkspaceFocusedNode(workspace);
+	auto* node = this->getWorkspaceFocusedNode();
 	if (node == nullptr) return;
 
 	switch (shift) {
@@ -1637,13 +1630,12 @@ static Hy3Node* findTabBarAt(Hy3Node& node, Vector2D pos, Hy3Node** focused_node
 }
 
 void Hy3Layout::focusTab(
-    const CWorkspace* workspace,
     TabFocus target,
     TabFocusMousePriority mouse,
     bool wrap_scroll,
     int index
 ) {
-	auto* node = this->getWorkspaceRootGroup(workspace);
+	auto* node = this->getWorkspaceRootGroup();
 	if (node == nullptr) return;
 
 	Hy3Node* tab_node = nullptr;
@@ -1674,7 +1666,7 @@ void Hy3Layout::focusTab(
 	}
 
 	if (tab_node == nullptr) {
-		tab_node = this->getWorkspaceFocusedNode(workspace);
+		tab_node = this->getWorkspaceFocusedNode();
 		if (tab_node == nullptr) return;
 
 		while (tab_node != nullptr
@@ -1740,8 +1732,8 @@ hastab:
 	this->recalcGeometry();
 }
 
-void Hy3Layout::setNodeSwallow(const CWorkspace* workspace, SetSwallowOption option) {
-	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace);
+void Hy3Layout::setNodeSwallow(SetSwallowOption option) {
+	auto* node = this->getWorkspaceFocusedNodeIfTiled();
 	if (node == nullptr) return;
 	node->assertNotRoot();
 
@@ -1753,12 +1745,12 @@ void Hy3Layout::setNodeSwallow(const CWorkspace* workspace, SetSwallowOption opt
 	}
 }
 
-void Hy3Layout::killFocusedNode(const CWorkspace* workspace) {
+void Hy3Layout::killFocusedNode() {
 	auto last_window = Desktop::focusState()->window();
 	if (last_window != nullptr && last_window->m_isFloating) {
 		last_window->sendClose();
 	} else {
-		auto* node = this->getWorkspaceFocusedNode(workspace);
+		auto* node = this->getWorkspaceFocusedNode();
 		if (node == nullptr) return;
 
 		std::vector<PHLWINDOW> windows;
@@ -1772,7 +1764,6 @@ void Hy3Layout::killFocusedNode(const CWorkspace* workspace) {
 }
 
 void Hy3Layout::expand(
-    const CWorkspace* workspace,
     ExpandOption option,
     ExpandFullscreenOption fs_option
 ) {
@@ -1798,7 +1789,7 @@ void Hy3Layout::expand(
 		return;
 	}
 
-	auto* node = this->getWorkspaceFocusedNodeIfTiled(workspace, false, true);
+	auto* node = this->getWorkspaceFocusedNodeIfTiled(false, true);
 	if (node == nullptr) return;
 
 	switch (option) {
@@ -1865,8 +1856,8 @@ void Hy3Layout::expand(
 	return;
 }
 
-void Hy3Layout::setTabLock(const CWorkspace* workspace, TabLockMode mode) {
-	auto* focused = this->getWorkspaceFocusedNode(workspace);
+void Hy3Layout::setTabLock(TabLockMode mode) {
+	auto* focused = this->getWorkspaceFocusedNode();
 	if (focused == nullptr) return;
 
 	for (auto& node: focused->ancestors()) {
@@ -1895,14 +1886,14 @@ static void equalizeRecursive(Hy3Node* node, bool recursive) {
 	}
 }
 
-void Hy3Layout::equalize(const CWorkspace* workspace, bool recursive) {
-	auto* focused = this->getWorkspaceFocusedNode(workspace);
+void Hy3Layout::equalize(bool recursive) {
+	auto* focused = this->getWorkspaceFocusedNode();
 	if (focused == nullptr) return;
 
 	Hy3Node* target = nullptr;
 
 	if (recursive) {
-		target = this->getWorkspaceRootGroup(workspace);
+		target = this->getWorkspaceRootGroup();
 		if (target != nullptr) {
 			equalizeRecursive(target, true);
 		}
@@ -1957,7 +1948,7 @@ bool Hy3Layout::shouldRenderSelected(const CWindow* window) {
 	if (window == nullptr) return false;
 	if (Desktop::focusState()->window()) return false;
 
-	auto* root = this->getWorkspaceRootGroup(window->m_workspace.get());
+	auto* root = this->getWorkspaceRootGroup();
 	if (root == nullptr || root->as_group().focused_child == nullptr) return false;
 	auto* focused = &root->getFocusedNode();
 
@@ -1973,7 +1964,7 @@ bool Hy3Layout::shouldRenderSelected(const CWindow* window) {
 	return false;
 }
 
-Hy3Node* Hy3Layout::getWorkspaceRootGroup(const CWorkspace* workspace) {
+Hy3Node* Hy3Layout::getWorkspaceRootGroup() {
 	if (!this->root) return nullptr;
 	auto& group = this->root->as_group();
 	if (group.children.empty()) return nullptr;
@@ -1981,11 +1972,10 @@ Hy3Node* Hy3Layout::getWorkspaceRootGroup(const CWorkspace* workspace) {
 }
 
 Hy3Node* Hy3Layout::getWorkspaceFocusedNode(
-    const CWorkspace* workspace,
     bool ignore_group_focus,
     bool stop_at_expanded
 ) {
-	auto* rootNode = this->getWorkspaceRootGroup(workspace);
+	auto* rootNode = this->getWorkspaceRootGroup();
 	if (rootNode == nullptr) return nullptr;
 	return &rootNode->getFocusedNode(ignore_group_focus, stop_at_expanded);
 }
@@ -2006,14 +1996,13 @@ Hy3Node* Hy3Layout::getWorkspaceFocusedNode(
 // tabbed, wrapped or swallowed - and unlike killactive, which upstream does
 // guard, there is nothing sensible to do to the floating window instead.
 Hy3Node* Hy3Layout::getWorkspaceFocusedNodeIfTiled(
-    const CWorkspace* workspace,
     bool ignore_group_focus,
     bool stop_at_expanded
 ) {
 	auto window = Desktop::focusState()->window();
 	if (window != nullptr && window->m_isFloating) return nullptr;
 
-	return this->getWorkspaceFocusedNode(workspace, ignore_group_focus, stop_at_expanded);
+	return this->getWorkspaceFocusedNode(ignore_group_focus, stop_at_expanded);
 }
 
 static Hy3Node* findNodeFromWindowRecursive(Hy3Node* node, const CWindow* window) {

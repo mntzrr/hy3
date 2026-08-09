@@ -165,7 +165,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 				if (!valid(ws)) continue;
 				auto* hy3 = hy3InstanceForWorkspace(ws);
 				if (!hy3) continue;
-				auto* root = hy3->getWorkspaceRootGroup(ws.get());
+				auto* root = hy3->getWorkspaceRootGroup();
 				if (root) root->updateDecos();
 			}
 		}

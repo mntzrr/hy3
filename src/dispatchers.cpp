@@ -132,12 +132,11 @@ static GroupEphemeralityOption luaTableEphemerality(lua_State* L, int idx, const
 static SDispatchResult makeGroup(SMakeGroupAction action, GroupEphemeralityOption ephemeral, bool toggle) {
 	auto* hy3 = hy3InstanceForAction();
 	if (!hy3) return SDispatchResult {};
-	auto ws = hy3->workspace();
 
 	if (action.opposite) {
-		hy3->makeOppositeGroupOnWorkspace(ws.get(), ephemeral);
+		hy3->makeOppositeGroupOnWorkspace(ephemeral);
 	} else {
-		hy3->makeGroupOnWorkspace(ws.get(), action.layout, ephemeral, toggle);
+		hy3->makeGroupOnWorkspace(action.layout, ephemeral, toggle);
 	}
 
 	return SDispatchResult {};
@@ -224,26 +223,25 @@ static ChangeGroupAction luaChangeGroupActionArg(lua_State* L, int idx, const ch
 static SDispatchResult changeGroup(ChangeGroupAction action) {
 	auto* hy3 = hy3InstanceForAction();
 	if (!hy3) return SDispatchResult {};
-	auto ws = hy3->workspace();
 
 	switch (action) {
 	case ChangeGroupAction::SplitH:
-		hy3->changeGroupOnWorkspace(ws.get(), Hy3GroupLayout::SplitH);
+		hy3->changeGroupOnWorkspace(Hy3GroupLayout::SplitH);
 		break;
 	case ChangeGroupAction::SplitV:
-		hy3->changeGroupOnWorkspace(ws.get(), Hy3GroupLayout::SplitV);
+		hy3->changeGroupOnWorkspace(Hy3GroupLayout::SplitV);
 		break;
 	case ChangeGroupAction::Tabbed:
-		hy3->changeGroupOnWorkspace(ws.get(), Hy3GroupLayout::Tabbed);
+		hy3->changeGroupOnWorkspace(Hy3GroupLayout::Tabbed);
 		break;
 	case ChangeGroupAction::Untab:
-		hy3->untabGroupOnWorkspace(ws.get());
+		hy3->untabGroupOnWorkspace();
 		break;
 	case ChangeGroupAction::ToggleTab:
-		hy3->toggleTabGroupOnWorkspace(ws.get());
+		hy3->toggleTabGroupOnWorkspace();
 		break;
 	case ChangeGroupAction::Opposite:
-		hy3->changeGroupToOppositeOnWorkspace(ws.get());
+		hy3->changeGroupToOppositeOnWorkspace();
 		break;
 	}
 
@@ -276,7 +274,7 @@ static SDispatchResult setEphemeral(bool ephemeral) {
 	auto* hy3 = hy3InstanceForAction();
 	if (!hy3) return SDispatchResult {};
 
-	hy3->changeGroupEphemeralityOnWorkspace(hy3->workspace().get(), ephemeral);
+	hy3->changeGroupEphemeralityOnWorkspace(ephemeral);
 	return SDispatchResult {};
 }
 
@@ -330,7 +328,7 @@ static SDispatchResult moveFocus(ShiftDirection shift, bool visible, std::option
 		return SDispatchResult {};
 	}
 
-	hy3->shiftFocus(ws.get(), shift, visible, warp_cursor);
+	hy3->shiftFocus(shift, visible, warp_cursor);
 	return SDispatchResult {};
 }
 
@@ -382,7 +380,7 @@ static SDispatchResult toggleFocusLayer(bool warp) {
 	auto* hy3 = hy3InstanceForAction();
 	if (!hy3) return SDispatchResult {};
 
-	hy3->toggleFocusLayer(hy3->workspace().get(), warp);
+	hy3->toggleFocusLayer(warp);
 	return SDispatchResult {};
 }
 
@@ -457,7 +455,7 @@ static SDispatchResult moveWindow(
 
 	auto warp_cursor = warp_override.value_or(!*no_cursor_warps);
 
-	hy3->shiftWindow(hy3->workspace().get(), shift, once, visible, monitor, warp_cursor);
+	hy3->shiftWindow(shift, once, visible, monitor, warp_cursor);
 	return SDispatchResult {};
 }
 
@@ -615,9 +613,8 @@ static FocusShift luaFocusShiftArg(lua_State* L, int idx, const char* fn) {
 static SDispatchResult changeFocus(FocusShift shift) {
 	auto* hy3 = hy3InstanceForAction();
 	if (!hy3) return SDispatchResult {};
-	auto ws = hy3->workspace();
 
-	hy3->changeFocus(ws.get(), shift);
+	hy3->changeFocus(shift);
 	return SDispatchResult {};
 }
 
@@ -652,9 +649,8 @@ static std::optional<TabFocusMousePriority> parseTabMouseArg(std::string_view ar
 static SDispatchResult focusTab(TabFocus focus, TabFocusMousePriority mouse, bool wrap_scroll, int index) {
 	auto* hy3 = hy3InstanceForAction();
 	if (!hy3) return SDispatchResult {};
-	auto ws = hy3->workspace();
 
-	hy3->focusTab(ws.get(), focus, mouse, wrap_scroll, index);
+	hy3->focusTab(focus, mouse, wrap_scroll, index);
 	return SDispatchResult {};
 }
 
@@ -764,7 +760,7 @@ static SDispatchResult setSwallow(SetSwallowOption option) {
 	auto* hy3 = hy3InstanceForAction();
 	if (!hy3) return SDispatchResult {};
 
-	hy3->setNodeSwallow(hy3->workspace().get(), option);
+	hy3->setNodeSwallow(option);
 	return SDispatchResult {};
 }
 
@@ -793,7 +789,7 @@ static SDispatchResult killActive() {
 	auto* hy3 = hy3InstanceForAction(true);
 	if (!hy3) return SDispatchResult {};
 
-	hy3->killFocusedNode(hy3->workspace().get());
+	hy3->killFocusedNode();
 	return SDispatchResult {};
 }
 
@@ -841,7 +837,7 @@ static SDispatchResult expand(ExpandOption expand, ExpandFullscreenOption fs_exp
 	auto* hy3 = hy3InstanceForAction(allow_fullscreen);
 	if (!hy3) return SDispatchResult {};
 
-	hy3->expand(hy3->workspace().get(), expand, fs_expand);
+	hy3->expand(expand, fs_expand);
 	return SDispatchResult {};
 }
 
@@ -899,7 +895,7 @@ static SDispatchResult lockTab(TabLockMode mode) {
 	auto* hy3 = hy3InstanceForAction();
 	if (!hy3) return SDispatchResult {};
 
-	hy3->setTabLock(hy3->workspace().get(), mode);
+	hy3->setTabLock(mode);
 	return SDispatchResult {};
 }
 
@@ -936,7 +932,7 @@ static SDispatchResult equalize(bool recursive) {
 	auto* hy3 = hy3InstanceForAction();
 	if (!hy3) return SDispatchResult {};
 
-	hy3->equalize(hy3->workspace().get(), recursive);
+	hy3->equalize(recursive);
 	return SDispatchResult {};
 }
 
