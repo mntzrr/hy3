@@ -87,6 +87,15 @@ require() { # require <what> <expected> <cmd...>
 	return 1
 }
 
+# The harness could not establish something it needs. Not an assertion failure -
+# the plugin was never asked the question - so it marks the block exactly as a
+# failed require() does, and the rest of it reports SKIP.
+harness_fail() { # harness_fail <what>
+	block_ok=0
+	printf '  \033[33mPRECONDITION\033[0m %s\n' "$1"
+	return 1
+}
+
 check() { # check <label> <expected> <actual>
 	if [ "$block_ok" -eq 0 ]; then
 		printf '  \033[33mSKIP\033[0m %s\n' "$1"
@@ -140,6 +149,7 @@ settle_until() { # settle_until <cmd...>
 
 addr_is() { [ "$(active_addr)" = "$1" ]; }
 where_is() { [ "$(where "$1")" = "$2" ]; }
+mon_is() { [ "$(focused_mon)" = "$1" ]; }
 
 # Read <cmd...> once it has stopped changing. A baseline sampled while the tree
 # is still relaying out makes every comparison against it meaningless, and the
@@ -181,9 +191,26 @@ setflag() { # setflag <key> <true|false>
 	done
 }
 
+# Focus, verified - and this is the one that mattered.
+#
+# Every dispatch in this suite acts on the *focused* node, so a focus that does
+# not land silently redirects everything after it at the wrong window. That is
+# how a whole block fails at once while each individual assertion looks
+# reasonable, and check_eventually cannot rescue it: the operation went
+# somewhere else, so the state it waits for is never even requested.
+#
+# The result used to be discarded at all 36 call sites. Under load the first
+# dispatch loses the race often enough to matter, so it retries once - which
+# fixes most of it outright - and only then gives up, marking the block instead
+# of letting it run against a window it did not choose.
 focus() {
 	dispatch "hl.dsp.focus({ window = 'address:$1' })"
-	settle_until addr_is "$1"
+	settle_until addr_is "$1" && return 0
+
+	dispatch "hl.dsp.focus({ window = 'address:$1' })"
+	settle_until addr_is "$1" && return 0
+
+	harness_fail "focus never reached $1 (active: $(active_addr))"
 }
 
 # Windows spawn on whatever monitor is current, which is why setup pins it -
@@ -193,7 +220,15 @@ focus() {
 # focus follows the pointer. A block that assumes it spawns on mon0 because the
 # block before it happened to leave things there fails, later, in an assertion
 # that names a monitor and not the reason.
-pin_mon0() { dispatch "hl.dsp.focus({ monitor = '$M0_NAME' })" 0.4; }
+pin_mon0() {
+	dispatch "hl.dsp.focus({ monitor = '$M0_NAME' })" 0.4
+	settle_until mon_is "$M0_NAME" && return 0
+
+	dispatch "hl.dsp.focus({ monitor = '$M0_NAME' })" 0.4
+	settle_until mon_is "$M0_NAME" && return 0
+
+	harness_fail "monitor focus never reached $M0_NAME (focused: $(focused_mon))"
+}
 
 # Move a node until it lands on the given monitor. Not a fixed count: at the
 # far edge of a layout `movewindow` wraps the node into a new group instead of
@@ -203,7 +238,7 @@ pin_mon0() { dispatch "hl.dsp.focus({ monitor = '$M0_NAME' })" 0.4; }
 move_window_until() { # move_window_until <addr> <dir> <target mon> [lua opts]
 	local i=0
 	while [ "$(where "$1")" != "$3" ]; do
-		[ "$i" -ge 8 ] && return 1
+		[ "$i" -ge 8 ] && { harness_fail "$1 never reached $3 after 8 moves"; return 1; }
 		dispatch "hl.plugin.hy3.move_window('$2'${4:+, $4})" 0.4
 		i=$((i + 1))
 	done
@@ -240,7 +275,7 @@ spawn() { # spawn <title>
 	dispatch "hl.dsp.exec_cmd('$TERM_CMD --title $1')"
 	local deadline=$((SECONDS + 30))
 	while [ -z "$(addr_of "$1")" ]; do
-		[ "$SECONDS" -ge "$deadline" ] && return 1
+		[ "$SECONDS" -ge "$deadline" ] && { harness_fail "$1 never mapped"; return 1; }
 		sleep 0.25
 	done
 	# mapped is not the same as laid out; let the tree settle before asserting
@@ -343,7 +378,7 @@ block "tab group moves intact"
 require "both windows exist" "$M0 $M1" where2 "$A" "$B"
 focus "$B"
 dispatch "hl.plugin.hy3.move_to_monitor('-1',{follow=true})"
-settle_until where_is "$B" "$M0"
+settle_until where_is "$B" "$M0" || harness_fail "t_b never returned to mon0"
 focus "$A"
 dispatch "hl.plugin.hy3.make_group('tab')" 0.4
 focus "$B"
@@ -614,7 +649,7 @@ spawn t_f || { echo "could not spawn t_f" >&2; exit 1; }
 spawn t_g || { echo "could not spawn t_g" >&2; exit 1; }
 F=$(addr_of t_f); G=$(addr_of t_g)
 [ -n "$F" ] && [ -n "$G" ] || { echo "could not spawn fullscreen windows" >&2; exit 1; }
-settle_until where_is "$F" "$M0"
+settle_until where_is "$F" "$M0" || harness_fail "t_f never reached mon0"
 FULL_WIDTH=$(stable width_of "$G")
 
 focus "$F"
