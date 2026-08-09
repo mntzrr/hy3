@@ -863,6 +863,57 @@ check_eventually "the tiled slot lays out the window it adopted" "$TILED_SLOT" g
 check "instance survived the swaps"                      "yes" "$(alive)"
 
 echo
+echo "== #197 changefocus raise =="
+# `raise` at the workspace group has nowhere further up, and upstream answers
+# that by wrapping to the bottom: one press past the top undoes the whole walk
+# and leaves a single window focused. plugin:hy3:changefocus_raise_stops makes
+# it stop instead, which is what `lower` already does at the other end.
+#
+# The oracle is that a focused *group* is not a focused window - hyprctl
+# activewindow reports a null address for one - so "wrapped" and "stopped" are
+# told apart by whether a window address comes back.
+#
+# Both phases are run, and the "off" phase is what keeps the gate honest: it
+# asserts the upstream wrap is still exactly what an unconfigured hy3 does.
+raise_x() { # raise_x <n>
+	local i
+	for ((i = 0; i < $1; i++)); do dispatch "hl.plugin.hy3.change_focus('raise')" 0.35; done
+}
+
+setflag changefocus_raise_stops false
+pin_mon0
+cleanup_windows
+spawn t_q || { echo "could not spawn t_q" >&2; exit 1; }
+spawn t_r || { echo "could not spawn t_r" >&2; exit 1; }
+spawn t_u || { echo "could not spawn t_u" >&2; exit 1; }
+RS_U=$(addr_of t_u)
+[ -n "$RS_U" ] || { echo "could not spawn the raise windows" >&2; exit 1; }
+
+# Nest t_u one level down, so the walk up is window -> group -> workspace group
+# and the wrap has somewhere to wrap back *to*. On a flat tree the deepest
+# selection is the window a wrap lands on anyway, and both phases would agree.
+focus "$RS_U"
+dispatch "hl.plugin.hy3.make_group('v')" 0.5
+raise_x 2
+check_eventually "off: two raises reach the workspace group" "null" active_addr
+raise_x 1
+check_eventually "off: a third raise wraps back to a window" "$RS_U" active_addr
+
+setflag changefocus_raise_stops true
+focus "$RS_U"
+raise_x 3
+check_eventually "on: the walk up stops at the workspace group" "null" active_addr
+raise_x 1
+check_eventually "on: holding the bind does not wrap either"    "null" active_addr
+
+# Stopped, not wedged: the group is still selected and still descends.
+dispatch "hl.plugin.hy3.change_focus('lower')" 0.35
+dispatch "hl.plugin.hy3.change_focus('lower')" 0.35
+check_eventually "on: lower still walks back down"              "$RS_U" active_addr
+check "instance survived the raises"                            "yes" "$(alive)"
+setflag changefocus_raise_stops false
+
+echo
 echo "== teardown =="
 cleanup_windows
 check "instance survived the run"              "yes" "$(alive)"

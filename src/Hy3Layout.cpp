@@ -1422,6 +1422,10 @@ void Hy3Layout::moveNodeToWorkspace(
 }
 
 void Hy3Layout::changeFocus(const CWorkspace* workspace, FocusShift shift) {
+	// fork: see the Raise case below
+	static const auto raise_stops =
+	    CConfigValue<Config::INTEGER>("plugin:hy3:changefocus_raise_stops");
+
 	auto* node = this->getWorkspaceFocusedNode(workspace);
 	if (node == nullptr) return;
 
@@ -1432,7 +1436,20 @@ void Hy3Layout::changeFocus(const CWorkspace* workspace, FocusShift shift) {
 		this->updateGroupBorderColors();
 		return;
 	case FocusShift::Raise:
-		if (node->is_root_group()) goto bottom;
+		// fork: at the workspace group there is nowhere further up, and upstream
+		// answers that by wrapping to the bottom - one keypress past the top
+		// undoes the entire walk up and leaves a single window focused. Holding
+		// a raise bind to select everything on the workspace therefore overshoots
+		// into the deepest selection it started from, which is upstream #197.
+		//
+		// Its opposite already behaves the other way: `lower` at a window is a
+		// no-op rather than a wrap to the top, so stopping is also the more
+		// consistent of the two. Gated all the same - the wrap is what upstream
+		// does today, and a bind can be built on it.
+		if (node->is_root_group()) {
+			if (*raise_stops) return;
+			goto bottom;
+		}
 		node->parent->focus(false, Desktop::FOCUS_REASON_KEYBIND);
 		this->updateGroupBorderColors();
 		return;

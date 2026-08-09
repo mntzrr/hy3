@@ -347,6 +347,10 @@ plugin {
     # (fork) hy3:movewindow at the edge of the layout hands the node to the
     # adjacent monitor instead of wrapping it into a new group
     movewindow_monitor_fallthrough = <bool> # default: false
+
+    # (fork) hy3:changefocus raise stops at the workspace group instead of
+    # wrapping back to the focused window, the way lower already stops at one
+    changefocus_raise_stops = <bool> # default: false
   }
 }
 ```
@@ -379,7 +383,7 @@ plugin {
  - `hy3:changefocus, <top | bottom | raise | lower | tab | tabnode>`
    - `top` - focus all nodes in the workspace
    - `bottom` - focus the single root selection window
-   - `raise` - raise focus one level
+   - `raise` - raise focus one level. at the workspace group it wraps back to the focused window, unless **(fork)** `plugin:hy3:changefocus_raise_stops` is set.
    - `lower` - lower focus one level
    - `tab` - raise focus to the nearest tab
    - `tabnode` - raise focus to the nearest node under the tab

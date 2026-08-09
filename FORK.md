@@ -165,6 +165,31 @@ change.
   where the flag that governs it is on, but it is now decided by the floating window's own
   position.
 
+### 6. `plugin:hy3:changefocus_raise_stops` (bool, default false)
+
+With this set, `hy3:changefocus raise` **stops** at the workspace group instead of wrapping
+back down to the focused window. Upstream **#197**, open since April 2025, no PR.
+
+This one is a fix wearing a feature's clothes, which is why it is gated rather than
+unconditional. The reported symptom is that a raise bind held or tapped a few times to select
+everything on a workspace — in order to move it all somewhere — overshoots by one press and
+lands back on the single window it started from, undoing the entire walk up. There is no
+feedback that the top was reached, so the overshoot is only visible after the fact.
+
+- `src/Hy3Layout.cpp` — one branch in `changeFocus`'s `FocusShift::Raise` case, where
+  `if (node->is_root_group()) goto bottom` becomes a conditional stop.
+- **`lower` already stops.** At a window it is a no-op rather than a wrap to the top, so
+  stopping is the more consistent of the two behaviours, not a new idea imported into hy3.
+- Gated all the same: the wrap is what upstream does today and a bind can be built on it —
+  `raise` as a cycle through selection levels is a coherent thing to want, and the issue's
+  reporter suggests keeping it under another name for exactly that reason.
+- Not a dead end when it stops: the group stays selected and `lower` walks straight back down.
+  The suite asserts that, because "stopped" and "wedged" look identical from one keypress.
+- `changefocus top` is unaffected. It focuses the `Hy3RootNode` itself, one level above where
+  `raise` tops out — `getWorkspaceFocusedNode` starts its walk at the root's *child*, so the
+  root node is never what `raise` is handed and `node->parent` is never the null it would
+  dereference there.
+
 ## Backported upstream PRs
 
 Fixes that are open upstream but touch code this fork's features sit on top of. Each is a
@@ -577,7 +602,7 @@ plugin that owns every window is disruptive at best, and has crashed the composi
 
 ```sh
 test/nested.sh start 2   # nested Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 98 assertions covering everything below
+test/smoke.sh            # 104 assertions covering everything below
 test/nested.sh stop
 ```
 
