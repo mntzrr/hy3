@@ -1723,7 +1723,9 @@ void Hy3Layout::expand(
 			auto& group = node->as_group();
 
 			group.expand_focused = ExpandFocusType::NotExpanded;
-			if (group.focused_child->is_group())
+			// fork: unguarded, and reachable straight from `hy3:expand shrink` -
+			// see Hy3GroupNode::collapseExpansions for when focused_child is null
+			if (group.focused_child != nullptr && group.focused_child->is_group())
 				group.focused_child->as_group().expand_focused = ExpandFocusType::Latch;
 
 			this->recalcGeometry();

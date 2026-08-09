@@ -265,7 +265,13 @@ void Hy3GroupNode::collapseExpansions() {
 
 	Hy3Node* node = this->focused_child;
 
-	while (node->is_group() && node->as_group().expand_focused == ExpandFocusType::Stack) {
+	// fork: focused_child is null for a group that lost its last child -
+	// extractChildRaw nulls it and does not clear expand_focused, so the early
+	// return above does not cover it. Same reasoning for the two other
+	// expand_focused sites, in recalcSizePosRecursive and Hy3Layout::expand.
+	while (node != nullptr && node->is_group()
+	       && node->as_group().expand_focused == ExpandFocusType::Stack)
+	{
 		auto& group = node->as_group();
 		group.expand_focused = ExpandFocusType::NotExpanded;
 		node = group.focused_child;
@@ -431,7 +437,10 @@ void Hy3Node::markFocused() {
 		group.group_focused = false;
 	}
 
-	root->updateDecos();
+	// fork: root() is null for a node detached from its tree, the same case
+	// recalcLayoutGeometry and layoutWorkspace already guard for. This was the
+	// last unguarded dereference of it.
+	if (root != nullptr) root->updateDecos();
 }
 
 Hy3Node& Hy3Node::getFocusedNode(bool ignore_group_focus, bool stop_at_expanded) {
@@ -554,8 +563,11 @@ void Hy3Node::recalcSizePosRecursive(
 	auto& group = this->as_group();
 
 	auto expand_focused = group.expand_focused != ExpandFocusType::NotExpanded;
+	// fork: see collapseExpansions - expand_focused alone does not imply a
+	// focused_child. With none there is nothing for the group to be expanded
+	// *around*, so this is false and the per-child branch below never matches.
 	bool directly_contains_expanded =
-	    expand_focused
+	    expand_focused && group.focused_child != nullptr
 	    && (group.focused_child->is_target()
 	        || group.focused_child->as_group().expand_focused == ExpandFocusType::NotExpanded);
 
@@ -805,9 +817,21 @@ Hy3Node* Hy3Node::findNodeForTabGroup(Hy3TabGroup& tab_group) {
 	return nullptr;
 }
 
+// fork: stop at a node with no parent, not just at the root.
+//
+// Every consumer but updateTabBarRecursive immediately dereferences
+// `.parent` on what this yields, which is safe in an attached tree because the
+// walk stops before the root and so every yielded node has one. A detached
+// subtree has no root to stop at: the walk ran off the top into
+// `nullptr->is_root()`. Yielding the parentless top instead would only move the
+// crash into the callers.
+//
+// So the invariant is stated rather than assumed - this yields nodes that have
+// a parent - and a detached subtree simply has fewer ancestors to offer. The
+// attached case is unchanged, every non-root node there having a parent.
 std::generator<Hy3Node&> Hy3Node::ancestors() {
 	auto* node = this;
-	while (!node->is_root()) {
+	while (node != nullptr && !node->is_root() && node->parent != nullptr) {
 		co_yield *node;
 		node = node->parent.get();
 	}
