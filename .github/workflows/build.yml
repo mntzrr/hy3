@@ -47,8 +47,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Errors only. The test harness is not written to satisfy shellcheck's
-      # style checks, and a gate that cries wolf is a gate that gets ignored;
-      # tighten to --severity=warning once the existing findings are cleared.
-      - run: shellcheck --severity=error test/*.sh
+      # Warnings and errors. This said "errors only, tighten to warning once the
+      # existing findings are cleared" - and by the time anyone checked there
+      # were none left to clear, so the deferral had outlived its reason.
+      #
+      # It stops here rather than going further on purpose: the level below this
+      # is `info`, where the three remaining findings live, and they are the kind
+      # the harness is deliberately written against. A gate that cries wolf is a
+      # gate that gets ignored.
+      - run: shellcheck --severity=warning test/*.sh
       - run: bash -n test/*.sh
