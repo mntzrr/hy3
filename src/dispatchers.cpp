@@ -299,7 +299,7 @@ static SDispatchResult dispatch_setephemeral(std::string value) {
 	return setEphemeral(args[0] == "true");
 }
 
-std::optional<ShiftDirection> parseShiftArg(std::string arg) {
+static std::optional<ShiftDirection> parseShiftArg(std::string_view arg) {
 	if (arg == "l" || arg == "left") return ShiftDirection::Left;
 	else if (arg == "r" || arg == "right") return ShiftDirection::Right;
 	else if (arg == "u" || arg == "up") return ShiftDirection::Up;

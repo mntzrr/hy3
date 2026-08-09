@@ -584,10 +584,7 @@ void Hy3TabBar::updateAnimations(bool warp) {
 	}
 }
 
-void Hy3TabBar::setSize(Vector2D size) {
-	if (size == this->size) return;
-	this->size = size;
-}
+void Hy3TabBar::setSize(Vector2D size) { this->size = size; }
 
 UP<Hy3TabGroup> Hy3TabGroup::create(Hy3Node& node) {
 	auto up = makeUnique<Hy3TabGroup>(node);
@@ -844,7 +841,6 @@ void Hy3TabGroup::renderTabBar() {
 			auto border = window->getRealBorderSize();
 			auto radius = *window_rounding + border;
 			window_box.expand(border);
-			// scaleBox(&window_box, scale);
 			window_box.scale(scale);
 
 			if (window_box.width > 0 && window_box.height > 0)

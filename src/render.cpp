@@ -56,7 +56,6 @@ void Hy3Render::renderTab(
 
 	if (blur) {
 		GLCALL(glActiveTexture(GL_TEXTURE0));
-		//GLCALL(glBindTexture(blurTex->m_target, blurTex->m_texID));
 		GLCALL(glBindTexture(GL_TEXTURE_2D, blurTex->m_texID));
 		GLCALL(glUniform1i(shader.blurTex, 0));
 	}
@@ -94,7 +93,6 @@ void Hy3Render::renderTab(
 	GLCALL(glBindVertexArray(0));
 
 	if (blur) {
-		// GLCALL(glBindTexture(blurTex->m_target, 0));
 		GLCALL(glBindTexture(GL_TEXTURE_2D, 0));
 	}
 }

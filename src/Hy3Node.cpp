@@ -21,7 +21,7 @@
 
 using Desktop::View::CWindow;
 
-const float MIN_RATIO = 0.0f;
+static constexpr float MIN_RATIO = 0.0f;
 
 Hy3GroupNode::Hy3GroupNode(Hy3GroupLayout layout): Hy3Node(Hy3NodeType::Group), layout(layout) {
 	if (!isTab()) {

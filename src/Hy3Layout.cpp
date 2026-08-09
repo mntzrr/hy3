@@ -1342,7 +1342,7 @@ static void updateTreeTabBars(Hy3Node& node) {
 
 void Hy3Layout::moveNodeToWorkspace(
     CWorkspace* origin,
-    std::string wsname,
+    const std::string& wsname,
     bool follow,
     bool warp
 ) {
