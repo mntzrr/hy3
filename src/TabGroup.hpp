@@ -54,7 +54,13 @@ struct Hy3TabBarEntry {
 		float scale = 0.0;
 		std::string window_title;
 		int full_logical_width = 0;
-		float render_width = 0;
+		// fork: double, not float. renderText computes the width it compares
+		// this against as `box.width - padding * 2`, a double - so a float
+		// field made the store and the compare disagree at any scale whose
+		// product is not float-representable, and an ellipsized title rebuilt
+		// its texture every frame. Integer scales round-trip exactly, which is
+		// why only fractional ones (1.6, 1.9, ...) were affected.
+		double render_width = 0;
 
 		std::string text_font;
 		int font_height = 0;
@@ -111,12 +117,14 @@ public:
 	void tick();
 	void updateNodeList(std::list<UP<Hy3Node>>& nodes);
 	void updateAnimations(bool warp = false);
-	void setSize(Vector2D);
 
 	std::list<Hy3TabBarEntry> entries;
 
 private:
-	Vector2D size;
+	// fork: `Vector2D size` and its setSize lived here, written once per frame
+	// by renderTabBar and read by nothing since the render path stopped using
+	// it. What made the write look load bearing is that findTabBarAt reads
+	// `tab_bar.size->value()` - a different member, on Hy3TabGroup.
 
 	// Tab bar entries take a reference to `this`.
 	Hy3TabBar(Hy3TabBar&&) = delete;

@@ -356,8 +356,12 @@ void Hy3TabBarEntry::renderText(float scale, CBox& box, float opacity) {
 		cairo_surface_destroy(cairo_surface);
 	}
 
-	auto x_offset =
-	    *text_center ? box.w * 0.5 - this->last_render.logical_width * 0.5 : *text_padding;
+	// fork: `padding`, not `*text_padding`. box is in device pixels - every
+	// component of it was multiplied by scale in renderTabBar - and the rest of
+	// this function respects that, including the font size. The left-aligned
+	// branch alone used the raw logical constant, so at scale 2 the text sat
+	// 1.5px from the left edge against 4.5px on the right.
+	auto x_offset = *text_center ? box.w * 0.5 - this->last_render.logical_width * 0.5 : padding;
 
 	auto y_offset = box.h * 0.5 - this->last_render.logical_height * 0.5;
 
@@ -584,8 +588,6 @@ void Hy3TabBar::updateAnimations(bool warp) {
 	}
 }
 
-void Hy3TabBar::setSize(Vector2D size) { this->size = size; }
-
 UP<Hy3TabGroup> Hy3TabGroup::create(Hy3Node& node) {
 	auto up = makeUnique<Hy3TabGroup>(node);
 	up->self = WP<Hy3TabGroup>(up);
@@ -804,8 +806,6 @@ void Hy3TabGroup::renderTabBar() {
 	if (!this->bar.damaged || this->bar.destroy) return;
 	this->bar.damaged = false;
 
-	this->bar.setSize(scaledBox.size());
-
 	auto render_stencil = this->bar.fade_opacity->isBeingAnimated();
 
 	if (!render_stencil) {
@@ -916,6 +916,13 @@ bool Hy3TabPassElement::needsPrecomputeBlur() {
 	static const auto col_border_locked = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:locked_border");
 	static const auto col_inactive = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:inactive");
 	static const auto col_border_inactive = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:inactive_border");
+	// fork: render merges six fill and six border colours; this checked five
+	// pairs. active_alt_monitor and its border arrived with the alt-monitor
+	// highlight and were never added here, so a config that made every other
+	// colour opaque would skip the blur precompute while still drawing a
+	// translucent one over an empty framebuffer.
+	static const auto col_active_alt_monitor = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:active_alt_monitor");
+	static const auto col_border_active_alt_monitor = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:active_alt_monitor_border");
 	// clang-format on
 
 	if (!*blur) return false;
@@ -924,8 +931,9 @@ bool Hy3TabPassElement::needsPrecomputeBlur() {
 	auto needsblur = [](const auto& col) { return CHyprColor(*col).a < 1.0; };
 	return needsblur(col_active) || needsblur(col_border_active) || needsblur(col_focused)
 	    || needsblur(col_border_focused) || needsblur(col_urgent) || needsblur(col_border_urgent)
-	    || needsblur(col_locked) || needsblur(col_border_locked) || needsblur(col_inactive)
-	    || needsblur(col_border_inactive);
+	    || needsblur(col_locked) || needsblur(col_border_locked)
+	    || needsblur(col_active_alt_monitor) || needsblur(col_border_active_alt_monitor)
+	    || needsblur(col_inactive) || needsblur(col_border_inactive);
 }
 
 std::optional<CBox> Hy3TabPassElement::boundingBox() {
