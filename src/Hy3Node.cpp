@@ -251,12 +251,34 @@ UP<Hy3Node> Hy3GroupNode::extractChild(Hy3Node& child) {
 
 	group_focused = false;
 
+	// fork: rescale the survivors proportionally rather than by a constant
+	// offset.
+	//
+	// This used to add -((1.0 - extracted->size_ratio) / child_count) to every
+	// survivor. That preserves the invariant recalcSizePosRecursive needs -
+	// the ratios summing to the child count, since ratio_mul divides the
+	// constraint by that count - but it does not preserve per-element
+	// positivity: a survivor whose ratio is below (1 - r_extracted) / n comes
+	// out negative. MIN_RATIO is 0.0f and only consulted during interactive
+	// resize, so nothing between here and setPositionGlobal clamps it.
+	//
+	// A 10/10/80 split (0.3 / 0.3 / 2.4) closing one of the narrow children
+	// gave splitmod = -0.35 and left the other at -0.05: a negative box width,
+	// with `offset += child_w` then walking backwards so the remaining windows
+	// laid themselves out left of the group's own edge.
+	//
+	// Scaling by count/sum holds the same invariant and cannot flip a sign.
 	if (!children.empty()) {
-		auto child_count = children.size();
-		auto splitmod = -((1.0 - extracted->size_ratio) / child_count);
+		double remaining = 0.0;
+		for (auto& c: children) remaining += c->size_ratio;
 
-		for (auto& c: children) {
-			c->size_ratio += splitmod;
+		if (remaining > 0.0) {
+			auto rescale = children.size() / remaining;
+			for (auto& c: children) c->size_ratio *= rescale;
+		} else {
+			// Degenerate - only reachable from ratios that were already broken.
+			// An equal split is the one answer that cannot make it worse.
+			for (auto& c: children) c->size_ratio = 1.0;
 		}
 	}
 
@@ -531,7 +553,7 @@ void Hy3Node::recalcSizePosRecursive(CBox offsets, bool no_animation) {
 	// ::valid - Hy3Node::valid() is a different, argument-less thing and shadows it
 	auto workspace_rule = ::valid(ws) ? Config::workspaceRuleMgr()->getWorkspaceRuleFor(ws)
 	                                  : std::optional<Config::CWorkspaceRule>();
-	auto gaps_in = workspace_rule.and_then([](auto r) { return r.m_gapsIn; })
+	auto gaps_in = workspace_rule.and_then([](const auto& r) { return r.m_gapsIn; })
 	                   .value_or(*sc<Config::CCssGapData*>(p_gaps_in.ptr()));
 
 	this->recalcSizePosRecursive(offsets, no_animation, gaps_in);
