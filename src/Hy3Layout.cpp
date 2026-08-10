@@ -240,8 +240,6 @@ Hy3Node* Hy3Layout::insertNode(UP<Hy3Node> node_up, std::optional<Vector2D> foca
 
 	node_up->size_ratio = 1.0;
 
-	auto& monitor = ws->m_monitor;
-
 	Hy3Node* opening_into;
 	Hy3Node* opening_after = nullptr;
 
@@ -271,11 +269,38 @@ Hy3Node* Hy3Layout::insertNode(UP<Hy3Node> node_up, std::optional<Vector2D> foca
 		    CConfigValue<Config::INTEGER>("plugin:hy3:tab_first_window");
 
 		// Use space work area if available, fall back to monitor
-		CBox wa_box(monitor->m_position, monitor->m_size);
+		//
+		// fork: m_monitor is weak - see recalcGeometry for when a workspace has
+		// none - and this is the only place insertNode touches it. The fallback
+		// is what goes missing, not the answer: the space's work area is the
+		// preferred source anyway, and only the orientation of the very first
+		// split is decided from this box. Guarding here rather than at the top
+		// of insertNode keeps a monitorless workspace able to take windows into
+		// a tree it already has.
+		CBox wa_box;
+		bool have_box = false;
+
+		if (auto monitor = ws->m_monitor.lock()) {
+			wa_box = CBox(monitor->m_position, monitor->m_size);
+			have_box = true;
+		}
+
 		auto algo = m_parent.lock();
 		if (algo) {
 			auto space = algo->space();
-			if (space) wa_box = space->workArea();
+			if (space) {
+				wa_box = space->workArea();
+				have_box = true;
+			}
+		}
+
+		if (!have_box) {
+			hy3_log(
+			    ERR,
+			    "insertNode: workspace {} has neither a space nor a monitor to size its first window",
+			    ws->m_id
+			);
+			return nullptr;
 		}
 
 		// getWorkspaceRootGroup() returns null both when there is no root and
@@ -471,9 +496,18 @@ void Hy3Layout::recalcGeometry(bool no_animation) {
 	auto workspace = space->workspace();
 	if (!workspace) return;
 
+	// fork: m_monitor is weak, and this is the hottest entry point in the
+	// layout - roughly twenty internal call sites reach it without going
+	// through CSpace, whose own recheckWorkArea carries this guard. A workspace
+	// is momentarily monitorless while CMonitor::onDisconnect rehomes it and
+	// before CFallbackStateKeeper adopts it; logicalBoxMinusReserved() is
+	// virtual, so a null faults on the vtable load rather than on the member.
+	auto monitor = workspace->m_monitor.lock();
+	if (!monitor) return;
+
 	hy3_log(LOG, "recalculating workspace {}", workspace->m_id);
 
-	auto ma = workspace->m_monitor->logicalBoxMinusReserved();
+	auto ma = monitor->logicalBoxMinusReserved();
 	auto wa = space->workArea();
 
 	if (this->root) {
@@ -648,15 +682,24 @@ Config::ErrorResult Hy3Layout::layoutMsg(const std::string_view& sv) {
 		auto* node = this->getNodeFromWindow(window.get());
 		if (node != nullptr) {
 			node->assertNotRoot();
-			auto& layout = node->parent->as_group().layout;
 
-			switch (layout) {
+			// fork: through setLayout, not by assigning the field.
+			//
+			// Hy3GroupNode::setLayout is the only maintainer of
+			// previous_nontab_layout, and these were the only two writes to a
+			// group's layout anywhere outside it. A togglesplit therefore left
+			// the group remembering the split it no longer had, and the next
+			// `changegroup toggletab` round trip silently restored the old
+			// orientation.
+			auto& group = node->parent->as_group();
+
+			switch (group.layout) {
 			case Hy3GroupLayout::SplitH:
-				layout = Hy3GroupLayout::SplitV;
+				group.setLayout(Hy3GroupLayout::SplitV);
 				this->recalcGeometry();
 				break;
 			case Hy3GroupLayout::SplitV:
-				layout = Hy3GroupLayout::SplitH;
+				group.setLayout(Hy3GroupLayout::SplitH);
 				this->recalcGeometry();
 				break;
 			case Hy3GroupLayout::Root: break;
@@ -1450,13 +1493,17 @@ void Hy3Layout::moveNodeToWorkspace(
 		this->recalcGeometry();
 	}
 
-	if (follow) {
-		auto& monitor = workspace->m_monitor;
-
+	// fork: m_monitor is weak, on both workspaces. The move itself has already
+	// happened above, so a monitorless target costs only the follow - see
+	// recalcGeometry for when a workspace is in that state.
+	auto monitor = workspace->m_monitor.lock();
+	if (follow && monitor) {
 		if (workspace->m_isSpecialWorkspace) {
 			monitor->setSpecialWorkspace(workspace);
 		} else if (origin_ws->m_isSpecialWorkspace) {
-			origin_ws->m_monitor->setSpecialWorkspace(nullptr);
+			if (auto origin_monitor = origin_ws->m_monitor.lock()) {
+				origin_monitor->setSpecialWorkspace(nullptr);
+			}
 		}
 
 		monitor->changeWorkspace(workspace);
@@ -1479,13 +1526,14 @@ void Hy3Layout::moveNodeToWorkspace(
 				Hy3Layout::warpCursorToBox(box.pos(), box.size());
 			}
 
-			Desktop::focusState()->rawMonitorFocus(monitor.lock());
+			Desktop::focusState()->rawMonitorFocus(monitor);
 		}
 	} else {
-		// Without follow, nothing has refocused the origin workspace, so focus
-		// falls through to whatever is underneath - moving a window off a
-		// special workspace drops focus onto the regular workspace below it,
-		// even though the scratchpad is still visible and still has windows.
+		// Nothing has refocused the origin workspace - either no follow was
+		// asked for, or there was no monitor to follow to - so focus falls
+		// through to whatever is underneath: moving a window off a special
+		// workspace drops focus onto the regular workspace below it, even
+		// though the scratchpad is still visible and still has windows.
 		//
 		// Ask hy3 rather than getLastFocusedWindow(): that still names the
 		// window just moved away, and focusing it would chase it to its new
@@ -1620,8 +1668,15 @@ static Hy3Node* findTabBarAt(Hy3Node& node, Vector2D pos, Hy3Node** focused_node
 				return findTabBarAt(*group.focused_child, pos, focused_node);
 			}
 		} else {
+			// fork: propagate the recursion's answer. This returned `child` -
+			// the node being traversed - so every non-tab frame peeled the
+			// result back up one level, and the caller got the tab group's
+			// ancestor rather than the tab group. Correct only when the tab
+			// group was a direct child of the search root, which is why it
+			// survived. focusTab then `goto hastab`s past the isTab() check and
+			// treats the wrong group's children as tabs.
 			for (auto& child: group.children) {
-				if (findTabBarAt(*child, pos, focused_node)) return child.get();
+				if (auto* found = findTabBarAt(*child, pos, focused_node)) return found;
 			}
 		}
 	}
@@ -1796,15 +1851,23 @@ void Hy3Layout::expand(
 	case ExpandOption::Expand: {
 		node->assertNotRoot();
 
-		if (node->is_group() && !node->as_group().group_focused)
-			node->as_group().expand_focused = ExpandFocusType::Stack;
-
-		auto& group = node->parent->as_group();
-		group.focused_child = node;
-		group.expand_focused = ExpandFocusType::Latch;
-
-		this->recalcGeometry();
-
+		// fork: an expansion that has reached the workspace's top-level group
+		// has nowhere further to go, and must not latch the root.
+		//
+		// Latching it looks harmless, and is geometrically invisible - the Root
+		// layout hands its single child the whole box either way, so a second
+		// press renders identically to the first. But ancestors() deliberately
+		// stops before the root, so with the root latched getExpandActor finds
+		// no non-expanded parent anywhere, falls out of its loop and returns
+		// the node itself. extractChild only calls collapseExpansions() when
+		// that actor is a group, so for a window the expansion is never torn
+		// down: closing it leaves a sibling maximized and the rest hidden.
+		//
+		// Upstream guarded this as `if (node->parent == nullptr) return;`,
+		// which the fork's extra root level made unreachable and the
+		// assertNotRoot translation then dropped. All three fs_option arms
+		// return, so this ran nothing below it anyway - only the two writes and
+		// the recalc above, which are precisely what has to go.
 		if (node->parent->is_root()) {
 			switch (fs_option) {
 			// fork: the `// goto fullscreen;` this replaces is upstream's record of
@@ -1827,6 +1890,15 @@ void Hy3Layout::expand(
 			case ExpandFullscreenOption::MaximizeOnly: return;
 			}
 		}
+
+		if (node->is_group() && !node->as_group().group_focused)
+			node->as_group().expand_focused = ExpandFocusType::Stack;
+
+		auto& group = node->parent->as_group();
+		group.focused_child = node;
+		group.expand_focused = ExpandFocusType::Latch;
+
+		this->recalcGeometry();
 	} break;
 	case ExpandOption::Shrink:
 		if (node->is_group()) {
@@ -1876,12 +1948,12 @@ void Hy3Layout::setTabLock(TabLockMode mode) {
 	}
 }
 
-static void equalizeRecursive(Hy3Node* node, bool recursive) {
+static void equalizeRecursive(Hy3Node* node) {
 	node->size_ratio = 1.0f;
 
-	if (recursive && node->is_group()) {
+	if (node->is_group()) {
 		for (auto& child: node->as_group().children) {
-			equalizeRecursive(child.get(), true);
+			equalizeRecursive(child.get());
 		}
 	}
 }
@@ -1895,12 +1967,26 @@ void Hy3Layout::equalize(bool recursive) {
 	if (recursive) {
 		target = this->getWorkspaceRootGroup();
 		if (target != nullptr) {
-			equalizeRecursive(target, true);
+			equalizeRecursive(target);
 		}
 	} else {
 		focused->assertNotRoot();
 		auto* parent = focused->parent.get();
-		equalizeRecursive(parent, false);
+
+		// fork: equalize the siblings, not the group holding them.
+		//
+		// This called equalizeRecursive(parent, false), which set the *parent's
+		// own* size_ratio - the share it takes within its own parent - and
+		// touched no sibling at all. A group's size_ratio is only ever read by
+		// its parent's sizing loop, and in the common case that parent is the
+		// Root-layout node, whose branch hands its single child the whole box
+		// without consulting a ratio. So the write landed on a field nothing
+		// reads and the dispatcher did nothing, against README's "equalizes
+		// immediate siblings of the focused window".
+		for (auto& child: parent->as_group().children) {
+			child->size_ratio = 1.0f;
+		}
+
 		target = parent;
 	}
 
