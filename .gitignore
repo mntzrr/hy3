@@ -1,6 +1,9 @@
 # build
 /result
 /build/
+# the compile_commands helpers' own tree - kept apart from build/ so their
+# Debug and HY3_NO_VERSION_CHECK settings never end up cached in it
+/build-cc/
 /compile_commands.json
 
 # clangd

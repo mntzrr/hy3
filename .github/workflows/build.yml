@@ -57,5 +57,9 @@ jobs:
       # is `info`, where the three remaining findings live, and they are the kind
       # the harness is deliberately written against. A gate that cries wolf is a
       # gate that gets ignored.
-      - run: shellcheck --severity=warning test/*.sh
-      - run: bash -n test/*.sh
+      # Not just test/. The compile_commands helpers and the commit-msg hook are
+      # shell too, and the one defect found in them - a cached CMake option
+      # leaking into the shared build directory - went unnoticed partly because
+      # nothing ever looked at those files.
+      - run: shellcheck --severity=warning ./*.sh .githooks/commit-msg test/*.sh
+      - run: bash -n ./*.sh .githooks/commit-msg test/*.sh
