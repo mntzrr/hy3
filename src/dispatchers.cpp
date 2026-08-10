@@ -1,3 +1,4 @@
+#include <charconv>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -721,9 +722,19 @@ static SDispatchResult dispatch_focustab(std::string value) {
 	else if (args[i] == "index") {
 		i++;
 		focus = TabFocus::Index;
-		if (!Hyprutils::String::isNumber(args[i])) return SDispatchResult {};
-		index = std::stoi(args[i]);
-		hy3_log(LOG, "focustab index '{}' -> {}", args[i], index);
+
+		// fork: from_chars, not isNumber + stoi.
+		//
+		// isNumber checks characters and never magnitude, so it accepts
+		// "10000000000" and std::stoi then throws std::out_of_range out of a
+		// dispatcher and into the compositor's call stack. from_chars reports
+		// the overflow instead of throwing, and needs no pre-check of its own -
+		// focusTab already no-ops on an index matching no child.
+		auto arg = args[i];
+		if (std::from_chars(arg.data(), arg.data() + arg.size(), index).ec != std::errc {})
+			return SDispatchResult {};
+
+		hy3_log(LOG, "focustab index '{}' -> {}", arg, index);
 	} else return SDispatchResult {};
 
 	i++;
@@ -1099,13 +1110,34 @@ static int luaToggleFloating(lua_State* L) {
 }
 
 static SDispatchResult dispatch_togglefloating(std::string value) {
+	auto i = 0;
 	auto args = CVarList(value);
 
-	auto workspace = args[0];
-
+	// fork: an index cursor, as dispatch_movewindow uses.
+	//
+	// Both arguments are optional and documented as such, but the workspace was
+	// taken from args[0] unconditionally and only args[1] was tested for the
+	// keyword. `hy3:togglefloating, nowarp` therefore asked to unmount onto a
+	// workspace named "nowarp", which resolves to WORKSPACE_INVALID and makes
+	// moveNodeToWorkspace bail - silently, since hy3_log reaches no log - so
+	// the bind did nothing at all.
 	std::optional<bool> warp_override;
-	if (args[1] == "nowarp") warp_override = false;
-	else if (args[1] == "warp") warp_override = true;
+	if (args[i] == "nowarp") {
+		warp_override = false;
+		i++;
+	} else if (args[i] == "warp") {
+		warp_override = true;
+		i++;
+	}
+
+	auto workspace = args[i++];
+
+	// The keyword is accepted on either side of the workspace: it read as a
+	// trailing option before this, and every documented example writes it there.
+	if (!warp_override.has_value()) {
+		if (args[i] == "nowarp") warp_override = false;
+		else if (args[i] == "warp") warp_override = true;
+	}
 
 	return toggleFloating(workspace, warp_override);
 }
