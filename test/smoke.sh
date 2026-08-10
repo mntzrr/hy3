@@ -180,13 +180,19 @@ active_ws() { ctl activewindow -j | jq -r .workspace.name; }
 # after it runs under the *old* value, which is indistinguishable from the
 # feature under test not working. hyprctl getoption reads it back, so wait on
 # that rather than on a sleep.
+#
+# Failure goes through harness_fail rather than `return 1`, which every one of
+# the call sites discarded - they invoke it bare, and there is no `set -e`. A
+# flag that never applied then left the block asserting against the old value
+# and reporting perfectly genuine-looking FAILs in a feature that works. This is
+# the same discard already fixed for focus() and pin_mon0; setflag was missed.
 setflag() { # setflag <key> <true|false>
 	ctl eval "hl.config({ plugin = { hy3 = { $1 = $2 } } })" >/dev/null 2>&1
 	local deadline=$((SECONDS + TIMEOUT))
 	# `.bool // empty` would be wrong here: jq's // treats false as absent, so a
 	# flag being set to false would never look applied.
 	while [ "$(ctl getoption "plugin:hy3:$1" -j 2>/dev/null | jq -r 'if has("bool") then (.bool|tostring) else empty end')" != "$2" ]; do
-		[ "$SECONDS" -ge "$deadline" ] && { echo "  setflag: $1=$2 never applied" >&2; return 1; }
+		[ "$SECONDS" -ge "$deadline" ] && { harness_fail "setflag: $1=$2 never applied"; return 1; }
 		sleep 0.1
 	done
 }

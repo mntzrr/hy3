@@ -100,11 +100,13 @@ is_nested() {
 
 # Every Hyprland that is ours, and no others - the host compositor is named the
 # same and is only told apart by its config.
+# Sorted, because start() takes a set difference of two calls to this with comm,
+# which requires it. pgrep's order is its own business and not one to rely on.
 nested_pids() {
 	local pid
 	for pid in $(pgrep -x Hyprland 2>/dev/null); do
 		is_nested "$pid" && echo "$pid"
-	done
+	done | sort
 }
 
 # Wait until nothing of ours is left. kill() only *sends* a signal, and
@@ -167,6 +169,26 @@ start() {
 
 	[ -f "$PLUGIN" ] || { echo "no plugin build at $PLUGIN - run cmake --build build" >&2; exit 1; }
 
+	# Refuse to start over a live instance. Both halves of the pid/signature
+	# discovery below go wrong at once when one is already up, and in opposite
+	# directions: nested_pids matches the OLD compositor on the first poll,
+	# before the new one has exec'd, while `rm -rf "$NESTED_XDG"` unlinks the
+	# old instance's hypr/<sig>/ so the set difference yields the NEW signature.
+	# The pair written at the end of start() is then exactly the half-valid one
+	# its comment claims can never happen, and nested_sig() cannot see it - the
+	# old pid passes is_nested and the new signature has a live socket.
+	#
+	# Reachable in practice: stop() returns 1 with an instance still alive,
+	# having already removed the state files, and the aborts below leave one up
+	# too. Everything downstream then aims at the wrong process - float_on_host
+	# floats nothing, the error paths kill the old compositor and orphan the
+	# new one, and smoke.sh's alive() polls a process that is not under test.
+	if [ -n "$(nested_pids)" ]; then
+		echo "a nested instance is already running: $(nested_pids | tr '\n' ' ')" >&2
+		echo "run '$0 stop' first" >&2
+		exit 1
+	fi
+
 	mkdir -p "$RUNDIR"
 	# Never inherit state from a previous run: a leftover pair that a crashed
 	# start() left half-written is the one thing nested_sig() cannot detect.
@@ -212,8 +234,13 @@ start() {
 		esac
 	fi
 
-	local before
+	local before pids_before
 	before=$(existing_sigs)
+	# Same set-difference treatment as the signature, for the same reason: an
+	# absolute answer ("the first nested Hyprland") is only right when there is
+	# nothing else to confuse it with, and the check above is what makes that
+	# true rather than something to rely on twice.
+	pids_before=$(nested_pids)
 
 	# a stale signature in the environment makes the child talk to the parent.
 	#
@@ -271,7 +298,7 @@ start() {
 	# process group leader. Find the compositor by its config path instead.
 	local pid="" j=0
 	while [ "$j" -lt 40 ]; do
-		pid=$(nested_pids | head -1)
+		pid=$(comm -13 <(echo "$pids_before") <(nested_pids) | head -1)
 		[ -n "$pid" ] && break
 		j=$((j + 1))
 		sleep 0.25
