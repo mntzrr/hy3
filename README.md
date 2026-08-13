@@ -1,7 +1,6 @@
 <img align="right" style="width: 256px" src="assets/logo.svg">
 
 # hy3
-<a href="https://matrix.to/#/#hy3:outfoxxed.me"><img src="https://img.shields.io/badge/Join%20the%20matrix%20room-%23hy3:outfoxxed.me-0dbd8b?logo=matrix&style=flat-square"></a>
 
 i3 / sway like layout for [hyprland](https://github.com/hyprwm/hyprland).
 
@@ -10,8 +9,8 @@ i3 / sway like layout for [hyprland](https://github.com/hyprwm/hyprland).
 > Additions are marked **(fork)** throughout; everything unmarked is upstream's work, under the
 > same GPL-3. See [FORK.md](./FORK.md) for what differs and why.
 >
-> The matrix room, issue tracker and AUR packages linked below are **upstream's**. Problems with
-> this fork are not theirs to field — do not report fork behaviour there.
+> Problems with this fork are not upstream's to field — do not report fork behaviour in
+> upstream's issue tracker or matrix room.
 
 [Installation](#installation), [Configuration](#configuration)
 
@@ -23,39 +22,16 @@ i3 / sway like layout for [hyprland](https://github.com/hyprwm/hyprland).
 - [x] Greatly improved tabbed node groups over base hyprland
 - [x] Optional autotiling
 
-Additional features may be suggested in the repo issues or the [matrix room](https://matrix.to/#/#hy3:outfoxxed.me).
+Additional features may be suggested in this repo's issues.
 
 ### Demo
 <video width="640" height="360" controls="controls" src="https://github.com/user-attachments/assets/ed2fe78d-8c31-47d8-a91d-e89aed42189c"></video>
 
------
-
-In addition to hy3, I maintain [Quickshell](https://quickshell.outfoxxed.me/?utm_source=hy3-readme),
-a toolkit for creating custom bars, widgets, lockscreens, and other desktop shell components
-with first class support for Hyprland.
-
-If that sounds interesting, check out the [website](https://quickshell.outfoxxed.me/?utm_source=hy3-readme).
-
------
-
 ### Stability
-**(fork)** This fork does not cut releases; `master` is the only supported ref and is
-expected to build against the current hyprland release. The text below is upstream's and
-describes the upstream repo.
+This fork does not cut releases; `master` is the only supported ref and is expected to
+build against the current hyprland release.
 
-hy3 has a tagged release for each hyprland update, and master tracks hyprland's main branch.
-If you are running a release version of hyprland then use the matching tagged hy3 version.
-If you are running an untagged hyprland release then use the `master` branch of hy3.
-
-Commits are tested before pushing and will build against the hyprland release **in the flake.lock file**.
-There may be a mismatch with hyprland's main branch. If hy3 fails to build against hyprland's main branch
-please make an issue or ping me in the [hy3 matrix room](https://matrix.to/#/#hy3-support:outfoxxed.me).
-
-Tagged hy3 versions are always checked against the corresponding hyprland tag.
-
-If you encounter any bugs, please report them in the issue tracker.
-
-When reporting bugs, please include:
+If you encounter any bugs, please report them in this repo's issue tracker, including:
 - Commit hash of the version you are running.
 - Steps to reproduce the bug (if you can figure them out)
 - backtrace of the crash (if applicable)
@@ -202,270 +178,176 @@ The plugin will be located at `build/libhy3.so`, and you can load it normally
 
 Note that the hyprland headers and pkg-config file **MUST be installed correctly, for the target version of hyprland**.
 
-### Arch (AUR)
-
-> [!NOTE]
-> **(fork)** Both AUR packages build upstream, not this fork. To package the fork,
-> build manually (below) or use hyprpm with the fork URL (above).
-
-> [!NOTE]
-> This method of installation is deprecated and you should use *hyprpm* instead,
-> as it is simpler and less error prone.
-
-> [!CAUTION]
-> Pacman is not very reliable when it comes to building packages in the correct order.
-> If you get a notification saying *hy3 was compiled for a different version of hyprland*
-> then your packages likely updated in the wrong order, or you have hyprland headers in `/usr/local`.
->
-> To fix this, remove `/usr/include/hyprland`, `/usr/local/include/hyprland`, `/usr/share/pkgconfig/hyprland.pc` and `/usr/local/share/pkgconfig/hyprland.pc`,
-> then reinstall hyprland and hy3.
->
-> If you know how to fix this please open an issue or pr, or message `@outfoxxed:outfoxxed.me` in the [matrix room](https://matrix.to/#/#hy3-support:outfoxxed.me).
-
-hy3 stable (for arch's `hyprland` package) is available on the AUR as [hy3](https://aur.archlinux.org/packages/hy3).
-
-hy3-git (for `hyprland-git` on the AUR, unofficial package) is available on the AUR as [hy3-git](https://aur.archlinux.org/packages/hy3-git).
-
-Both packages install hy3 as `/usr/lib/libhy3.so`.
-You can enable it in your hyprland configuration by adding the following line anywhere in your `hyprland.conf`
-
-```conf
-plugin = /usr/lib/libhy3.so
-```
-
 ## Configuration
 
-> [!IMPORTANT]
-> The configuration listed below is for the current hy3 commit.
-> If you are using a release version of hy3 then make sure you are
-> reading the tagged revision of this readme.
+Configuration is done through hyprland's Lua config. Enable the layout with
 
-Set your `general:layout` to `hy3` in hyprland.conf.
-
-hy3 requires using a few custom dispatchers for normal operation.
-In your hyprland config replace the following dispatchers:
- - `movefocus` -> `hy3:movefocus`
- - `movewindow` -> `hy3:movewindow`
- - `movetoworkspace` -> `hy3:movetoworkspace`
- - `killactive` -> `hy3:killactive`
-
-You can use `hy3:makegroup` to create a new split.
-
-The [dispatcher list](#dispatcher-list) and [config fields](#config-fields) sections have all the
-configuration options, and some explanation as to what they do.
-[The hyprland config in my dots](https://git.outfoxxed.me/outfoxxed/nixnew/src/branch/master/modules/hyprland/hyprland.conf) can also be used as a reference.
-
-### Config fields
-```conf
-plugin {
-  hy3 {
-    # policy controlling what happens when a node is removed from a group,
-    # leaving only a group
-    # 0 = remove the nested group
-    # 1 = keep the nested group
-    # 2 = keep the nested group only if its parent is a tab group
-    node_collapse_policy = <int> # default: 2
-
-    # when a workspace holds a single window, treat it as fullscreen for tab bar
-    # purposes: the bar is hidden for it
-    no_gaps_when_only = <int> # default: 0
-
-    # offset from group split direction when only one window is in a group
-    group_inset = <int> # default: 10
-
-    # if a tab group will automatically be created for the first window spawned in a workspace
-    tab_first_window = <bool>
-
-    # (fork) tag windows with hy3's grouping state - hy3_grouped when inside any
-    # group, hy3_tabbed when inside a tab group - so windowrules can react to it.
-    # backported from upstream PR #327.
-    tag_windows = <bool> # default: false
-
-    # tab group settings
-    tabs {
-      # height of the tab bar
-      height = <int> # default: 22
-
-      # padding between the tab bar and its focused node
-      padding = <int> # default: 5
-
-      # the tab bar should animate in/out from the top instead of below the window
-      from_top = <bool> # default: false
-
-      # radius of tab bar corners
-      radius = <int> # default: 6
-
-      # tab bar border width
-      border_width = <int> # default: 2
-
-      # render the window title on the bar
-      render_text = <bool> # default: true
-
-      # center the window title
-      text_center = <bool> # default: true
-
-      # font to render the window title with
-      text_font = <string> # default: Sans
-
-      # height of the window title
-      text_height = <int> # default: 8
-
-      # left padding of the window title
-      text_padding = <int> # default: 3
-
-      colors {
-        # active tab bar segment colors
-        active = <color> # default: rgba(33ccff40)
-        active_border = <color> # default: rgba(33ccffee)
-        active_text = <color> # default: rgba(ffffffff)
-
-        # active tab bar segment colors for bars on an unfocused monitor
-        active_alt_monitor = <color> # default: rgba(60606040)
-        active_alt_monitor_border = <color> # default: rgba(808080ee)
-        active_alt_monitor_text = <color> # default: rgba(ffffffff)
-
-        # focused tab bar segment colors (focused node in unfocused container)
-        focused = <color> # default: rgba(60606040)
-        focused_border = <color> # default: rgba(808080ee)
-        focused_text = <color> # default: rgba(ffffffff)
-
-        # inactive tab bar segment colors
-        inactive = <color> # default: rgba(30303020)
-        inactive_border = <color> # default: rgba(606060aa)
-        inactive_text = <color> # default: rgba(ffffffff)
-
-        # urgent tab bar segment colors
-        urgent = <color> # default: rgba(ff223340)
-        urgent_border = <color> # default: rgba(ff2233ee)
-        urgent_text = <color> # default: rgba(ffffffff)
-
-        # locked tab bar segment colors
-        locked = <color> # default: rgba(90903340)
-        locked_border = <color> # default: rgba(909033ee)
-        locked_text = <color> # default: rgba(ffffffff)
-      }
-
-      # if tab backgrounds should be blurred
-      # Blur is only visible when the above colors are not opaque.
-      blur = <bool> # default: true
-
-      # opacity multiplier for tabs
-      # Applies to blur as well as the given colors.
-      opacity = <float> # default: 1.0
-    }
-
-    # autotiling settings
-    autotile {
-      # enable autotile
-      enable = <bool> # default: false
-
-      # make autotile-created groups ephemeral
-      ephemeral_groups = <bool> # default: true
-
-      # if a window would be squished smaller than this width, a vertical split will be created
-      # -1 = never automatically split vertically
-      # 0 = always automatically split vertically
-      # <number> = pixel width to split at
-      trigger_width = <int> # default: 0
-
-      # if a window would be squished smaller than this height, a horizontal split will be created
-      # -1 = never automatically split horizontally
-      # 0 = always automatically split horizontally
-      # <number> = pixel height to split at
-      trigger_height = <int> # default: 0
-
-      # a space or comma separated list of workspace ids where autotile should be enabled
-      # it's possible to create an exception rule by prefixing the definition with "not:"
-      # workspaces = 1,2 # autotiling will only be enabled on workspaces 1 and 2
-      # workspaces = not:1,2 # autotiling will be enabled on all workspaces except 1 and 2
-      workspaces = <string> # default: all
-    }
-
-    # (fork) directional focus never leaves a special (scratchpad) workspace for
-    # another monitor - at the edge of the scratchpad's layout, focus stays put
-    special_focus_trap = <bool> # default: false
-
-    # (fork) hy3:movewindow at the edge of the layout hands the node to the
-    # adjacent monitor instead of wrapping it into a new group
-    movewindow_monitor_fallthrough = <bool> # default: false
-
-    # (fork) hy3:movewindow also moves a focused *floating* window - snapped to
-    # the work-area edge in that direction, like hyprland's own movewindow, and
-    # across monitors once against the edge if movewindow_monitor_fallthrough
-    # is also on
-    movewindow_floating = <bool> # default: false
-
-    # (fork) hy3:changefocus raise stops at the workspace group instead of
-    # wrapping back to the focused window, the way lower already stops at one
-    changefocus_raise_stops = <bool> # default: false
-  }
-}
+```lua
+hl.config({ general = { layout = "hy3" } })
 ```
 
-### Dispatcher list
- - `hy3:makegroup, <h | v | opposite | tab>, [toggle], [ephemeral | force_ephemeral]` - make a vertical / horizontal split or tab group
-   - `toggle` - if the focused node is the only child of its parent, which is of the type specified, the node's parent will be removed.
-   - `ephemeral` - the group will be removed once it contains only one node. does not affect existing groups.
-   - `force_ephemeral` - same as ephemeral, but converts existing single windows groups.
- - `hy3:changegroup, <h | v | tab | untab | toggletab | opposite>` - change the group the node belongs to, to a different layout
-   - `untab` will untab the group if it was previously tabbed
-   - `toggletab` will untab if group is tabbed, and tab if group is untabbed
-   - `opposite` will toggle between horizontal and vertical layouts if the group is not tabbed.
- - `hy3:setephemeral, <true | false>` - change the ephemerality of the group the node belongs to
- - `hy3:movefocus, <l | u | d | r | left | down | up | right>, [visible], [warp | nowarp]` - move the focus left, up, down, or right
-   - `visible` - only move between visible nodes, not hidden tabs
-   - `warp` - warp the mouse to the selected window, even if `general:no_cursor_warps` is true.
-   - `nowarp` - does not warp the mouse to the selected window, even if `general:no_cursor_warps` is false.
- - `hy3:warpcursor` - warp the cursor to the center of the focused node
- - `hy3:movewindow, <l | u | d | r | left | down | up | right>, [once], [visible], [monitor], [warp | nowarp]` - move a window left, up, down, or right
-   - `once` - only move directly to the neighboring group, without moving into any of its subgroups
-   - `visible` - only move between visible nodes, not hidden tabs
-   - `monitor` - **(fork)** at the edge of the layout, move the node to the adjacent monitor instead of wrapping it into a new group. implied by `plugin:hy3:movewindow_monitor_fallthrough`.
-   - `warp` / `nowarp` - **(fork)** whether to warp the mouse along when the move crosses a monitor. defaults to `cursor:no_warps`. a move that stays inside one monitor never warps, with or without this.
-   - with `plugin:hy3:movewindow_floating` set, this also moves a focused **floating** window - **(fork)** snapped to the work-area edge in that direction, an edge being a stop rather than a step, and across monitors once against the edge when monitor fallthrough is on.
- - `hy3:movetoworkspace, <workspace>, [follow, [warp | nowarp]]` - move the active node to the given workspace
-   - `follow` - change focus to the given workspace when moving the selected node
-   - `warp` - warp the mouse to the selected window, even if `general:no_cursor_warps` is true.
-   - `nowarp` - does not warp the mouse to the selected window, even if `general:no_cursor_warps` is false.
- - `hy3:killactive` - close all windows in the focused node
- - `hy3:changefocus, <top | bottom | raise | lower | tab | tabnode>`
-   - `top` - focus all nodes in the workspace
-   - `bottom` - focus the single root selection window
-   - `raise` - raise focus one level. at the workspace group it wraps back to the focused window, unless **(fork)** `plugin:hy3:changefocus_raise_stops` is set.
-   - `lower` - lower focus one level
-   - `tab` - raise focus to the nearest tab
-   - `tabnode` - raise focus to the nearest node under the tab
- - `hy3:togglefocuslayer, [nowarp]` - toggle focus between tiled and floating layers
-   - `nowarp` - do not warp the mouse to the newly focused window
- - `hy3:focustab, [l | r | left | right | index, <index>], [prioritize_hovered | require_hovered], [wrap]`
-   - `l | r | left | right` - direction to change focus towards
-   - `index, <index>` - select the `index`th tab
-   - `prioritize_hovered` - prioritize the tab group under the mouse when multiple are stacked. use the lowest group if none is under the mouse.
-   - `require_hovered` - affect the tab group under the mouse. do nothing if none are hovered.
-   - `wrap` - wrap to the opposite size of the tab bar if moving off the end
- - `hy3:locktab, [lock | unlock]` - lock the current tab, making it behave like a node
- - `hy3:debugnodes` - print the node tree into the hyprland log
- - :warning: **ALPHA QUALITY** `hy3:setswallow, <true | false | toggle>` - set the containing node's window swallow state
- - :warning: **ALPHA QUALITY** `hy3:expand, <expand | shrink | base>` - expand the current node to cover other nodes
-   - `expand` - expand by one node
-   - `shrink` - shrink by one node
-   - `base` - undo all expansions
- - `hy3:equalize, [workspace]` - equalize window sizes in group
-   - no argument: equalizes immediate siblings of the focused window
-   - `workspace`: equalizes all windows across the entire workspace tree
- - **(fork)** `hy3:movetomonitor, <l | u | d | r | left | down | up | right | +n | -n | <name> | <id> | desc:<description>>, [follow], [warp | nowarp]` - move the active node into the active workspace of another monitor
-   - the node is moved intact, so a raised group keeps its structure and tabs in the destination layout
-   - `+n` / `-n` cycle through the monitor list, wrapping at either end
-   - `follow` - change focus to the moved node. without it focus is handed back to the last focused window on the monitor the node left, unlike hyprland's own monitor move.
-   - `warp` - warp the mouse to the moved window, even if `general:no_cursor_warps` is true. only applies with `follow`.
-   - `nowarp` - does not warp the mouse to the moved window, even if `general:no_cursor_warps` is false.
- - **(fork)** `hy3:togglefloating, [<workspace>], [warp | nowarp]` - toggle the focused window's floating state, unless it is on a special (scratchpad) workspace, in which case it is unmounted onto a regular workspace and focus follows it
-   - `<workspace>` - workspace to unmount onto. defaults to the workspace visible underneath the scratchpad.
-   - `warp` / `nowarp` - override cursor warping on unmount.
+hy3 requires using a few custom dispatchers for normal operation.
+Replace the following standard dispatchers with their hy3 equivalents:
+ - `movefocus` -> `hl.plugin.hy3.move_focus`
+ - `movewindow` -> `hl.plugin.hy3.move_window`
+ - `movetoworkspace` -> `hl.plugin.hy3.move_to_workspace`
+ - `killactive` -> `hl.plugin.hy3.kill_active`
+
+`hl.plugin.hy3.make_group` creates a new split.
+
+The [config fields](#config-fields) and [Lua dispatchers](#lua-dispatchers) sections have all the
+configuration options, and some explanation as to what they do.
+
+### Config fields
+```lua
+hl.config({
+	plugin = { hy3 = {
+		-- policy controlling what happens when a node is removed from a group,
+		-- leaving only a group
+		-- 0 = remove the nested group
+		-- 1 = keep the nested group
+		-- 2 = keep the nested group only if its parent is a tab group
+		node_collapse_policy = <int>, -- default: 2
+
+		-- when a workspace holds a single window, treat it as fullscreen for tab bar
+		-- purposes: the bar is hidden for it
+		no_gaps_when_only = <int>, -- default: 0
+
+		-- offset from group split direction when only one window is in a group
+		group_inset = <int>, -- default: 10
+
+		-- if a tab group will automatically be created for the first window spawned in a workspace
+		tab_first_window = <bool>,
+
+		-- (fork) tag windows with hy3's grouping state - hy3_grouped when inside any
+		-- group, hy3_tabbed when inside a tab group - so windowrules can react to it.
+		-- backported from upstream PR #327.
+		tag_windows = <bool>, -- default: false
+
+		-- tab group settings
+		tabs = {
+			-- height of the tab bar
+			height = <int>, -- default: 22
+
+			-- padding between the tab bar and its focused node
+			padding = <int>, -- default: 5
+
+			-- the tab bar should animate in/out from the top instead of below the window
+			from_top = <bool>, -- default: false
+
+			-- radius of tab bar corners
+			radius = <int>, -- default: 6
+
+			-- tab bar border width
+			border_width = <int>, -- default: 2
+
+			-- render the window title on the bar
+			render_text = <bool>, -- default: true
+
+			-- center the window title
+			text_center = <bool>, -- default: true
+
+			-- font to render the window title with
+			text_font = <string>, -- default: Sans
+
+			-- height of the window title
+			text_height = <int>, -- default: 8
+
+			-- left padding of the window title
+			text_padding = <int>, -- default: 3
+
+			colors = {
+				-- active tab bar segment colors
+				active = <color>, -- default: rgba(33ccff40)
+				active_border = <color>, -- default: rgba(33ccffee)
+				active_text = <color>, -- default: rgba(ffffffff)
+
+				-- active tab bar segment colors for bars on an unfocused monitor
+				active_alt_monitor = <color>, -- default: rgba(60606040)
+				active_alt_monitor_border = <color>, -- default: rgba(808080ee)
+				active_alt_monitor_text = <color>, -- default: rgba(ffffffff)
+
+				-- focused tab bar segment colors (focused node in unfocused container)
+				focused = <color>, -- default: rgba(60606040)
+				focused_border = <color>, -- default: rgba(808080ee)
+				focused_text = <color>, -- default: rgba(ffffffff)
+
+				-- inactive tab bar segment colors
+				inactive = <color>, -- default: rgba(30303020)
+				inactive_border = <color>, -- default: rgba(606060aa)
+				inactive_text = <color>, -- default: rgba(ffffffff)
+
+				-- urgent tab bar segment colors
+				urgent = <color>, -- default: rgba(ff223340)
+				urgent_border = <color>, -- default: rgba(ff2233ee)
+				urgent_text = <color>, -- default: rgba(ffffffff)
+
+				-- locked tab bar segment colors
+				locked = <color>, -- default: rgba(90903340)
+				locked_border = <color>, -- default: rgba(909033ee)
+				locked_text = <color>, -- default: rgba(ffffffff)
+			},
+
+			-- if tab backgrounds should be blurred
+			-- Blur is only visible when the above colors are not opaque.
+			blur = <bool>, -- default: true
+
+			-- opacity multiplier for tabs
+			-- Applies to blur as well as the given colors.
+			opacity = <float>, -- default: 1.0
+		},
+
+		-- autotiling settings
+		autotile = {
+			-- enable autotile
+			enable = <bool>, -- default: false
+
+			-- make autotile-created groups ephemeral
+			ephemeral_groups = <bool>, -- default: true
+
+			-- if a window would be squished smaller than this width, a vertical split will be created
+			-- -1 = never automatically split vertically
+			-- 0 = always automatically split vertically
+			-- <number> = pixel width to split at
+			trigger_width = <int>, -- default: 0
+
+			-- if a window would be squished smaller than this height, a horizontal split will be created
+			-- -1 = never automatically split horizontally
+			-- 0 = always automatically split horizontally
+			-- <number> = pixel height to split at
+			trigger_height = <int>, -- default: 0
+
+			-- a space or comma separated list of workspace ids where autotile should be enabled
+			-- it's possible to create an exception rule by prefixing the definition with "not:"
+			-- workspaces = "1,2" -- autotiling will only be enabled on workspaces 1 and 2
+			-- workspaces = "not:1,2" -- autotiling will be enabled on all workspaces except 1 and 2
+			workspaces = <string>, -- default: all
+		},
+
+		-- (fork) directional focus never leaves a special (scratchpad) workspace for
+		-- another monitor - at the edge of the scratchpad's layout, focus stays put
+		special_focus_trap = <bool>, -- default: false
+
+		-- (fork) move_window at the edge of the layout hands the node to the
+		-- adjacent monitor instead of wrapping it into a new group
+		movewindow_monitor_fallthrough = <bool>, -- default: false
+
+		-- (fork) move_window also moves a focused *floating* window - snapped to
+		-- the work-area edge in that direction, like hyprland's own movewindow, and
+		-- across monitors once against the edge if movewindow_monitor_fallthrough
+		-- is also on
+		movewindow_floating = <bool>, -- default: false
+
+		-- (fork) change_focus "raise" stops at the workspace group instead of
+		-- wrapping back to the focused window, the way "lower" already stops at one
+		changefocus_raise_stops = <bool>, -- default: false
+	} },
+})
+```
 
 ### Lua dispatchers
 
-When using Hyprland's Lua config, hy3 exposes dispatcher factories under `hl.plugin.hy3`.
+hy3 exposes dispatcher factories under `hl.plugin.hy3`.
 The returned functions can be passed to `hl.bind(...)`.
 
 ```lua
@@ -521,10 +403,11 @@ hy3.focus_tab({
 	wrap = true | false, -- default: false
 })
 
-hy3.set_swallow(true | false | "true" | "false" | "toggle")
+hy3.set_swallow(true | false | "true" | "false" | "toggle") -- alpha quality
 
 hy3.kill_active()
 
+-- alpha quality
 hy3.expand("expand" | "shrink" | "base" | "maximize" | "fullscreen", {
 	fullscreen = "" | "intermediate_maximize" | "fullscreen_maximize" | "maximize_only",
 })
