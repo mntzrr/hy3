@@ -20,7 +20,16 @@ set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd -P)
 PLUGIN="$REPO/build/libhy3.so"
 CONFIG="$REPO/test/nested.lua"
-RUNDIR="${TMPDIR:-/tmp}/hy3-nested"
+# Per-checkout: is_nested() identifies instances by config path, so a start()
+# from a second checkout or worktree (the documented baseline workflow) sees
+# nothing running and would otherwise clobber the first instance's state files
+# and live socket dir while it keeps running.
+#
+# Keep it short: the IPC socket lives at $RUNDIR/xdg/hypr/<signature>/
+# .socket2.sock, the signature alone is ~62 chars, and sun_path is 108 - the
+# old path left single digits of headroom, so there is no room for a longer
+# prefix here.
+RUNDIR="${TMPDIR:-/tmp}/hy3n-$(printf '%s' "$REPO" | md5sum | cut -c1-8)"
 SIGFILE="$RUNDIR/signature"
 PIDFILE="$RUNDIR/pid"
 LOGFILE="$RUNDIR/hyprland.log"
@@ -461,5 +470,6 @@ start) shift; start "$@" ;;
 sig) nested_sig ;;
 ctl) shift; ctl "$@" ;;
 stop) stop ;;
+rundir) echo "$RUNDIR" ;;
 *) sed -n '2,12p' "$0" >&2; exit 1 ;;
 esac

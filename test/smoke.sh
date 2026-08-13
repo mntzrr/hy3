@@ -3,7 +3,7 @@
 #
 #   test/nested.sh start 2 && test/smoke.sh
 #
-# Assumes at least two monitors laid out left to right, which is what nested.sh
+# Assumes exactly two monitors laid out left to right, which is what nested.sh
 # sets up. Monitor names and ids are discovered rather than hardcoded - the
 # nested wayland outputs are named by whatever the host already has, and the
 # monitor id in `hyprctl clients` is assignment order, not screen order.
@@ -250,7 +250,15 @@ move_window_until() { # move_window_until <addr> <dir> <target mon> [lua opts]
 	done
 }
 
-alive() { kill -0 "$(cat "${TMPDIR:-/tmp}/hy3-nested/pid")" 2>/dev/null && echo yes || echo no; }
+# A pidfile alone is not proof: a crashed compositor's pid can be recycled
+# within seconds, and this is the suite's only crash oracle. The pidfile's
+# directory is per-checkout - ask nested.sh rather than recomputing it.
+alive() {
+	local pid comm
+	pid=$(cat "$("$N" rundir)/pid" 2>/dev/null) || true
+	comm=$(cat "/proc/${pid:-0}/comm" 2>/dev/null) || true
+	[ -n "$pid" ] && [ "$comm" = Hyprland ] && kill -0 "$pid" 2>/dev/null && echo yes || echo no
+}
 
 # Composite readers, so a two-window assertion can be polled as one value.
 where2() { echo "$(where "$1") $(where "$2")"; }
@@ -292,6 +300,13 @@ cleanup_windows() {
 	for a in $(clients | jq -r '.[]|select(.title|startswith("t_"))|.address'); do
 		dispatch "hl.dsp.window.close({ window = 'address:'..'$a' })" 0.3
 	done
+	# closes are not synchronous - a later block respawning the same title must
+	# not match a window that is still unmapping.
+	local deadline=$((SECONDS + TIMEOUT))
+	while [ "$(titled_count t_)" != 0 ]; do
+		[ "$SECONDS" -ge "$deadline" ] && { harness_fail "t_* windows never finished closing"; return 1; }
+		sleep 0.25
+	done
 }
 
 "$N" sig >/dev/null 2>&1 || { echo "no nested instance - run test/nested.sh start 2" >&2; exit 1; }
@@ -299,8 +314,11 @@ cleanup_windows() {
 # Monitor identities, sorted by x so index 0 is always the leftmost screen.
 mon_field() { ctl monitors -j | jq -r --argjson i "$1" --arg f "$2" 'sort_by(.x)|.[$i]|.[$f]'; }
 
-[ "$(ctl monitors -j | jq 'length')" -ge 2 ] || {
-	echo "need at least two monitors - run test/nested.sh start 2" >&2
+# Exactly two, not at least two: the wrap and relative-offset assertions are
+# calibrated for a pair (with three, '+1' from mon1 goes to mon2, not mon0),
+# and the failures that produces look like plugin bugs.
+[ "$(ctl monitors -j | jq 'length')" -eq 2 ] || {
+	echo "the suite assumes exactly two monitors - run test/nested.sh start 2" >&2
 	exit 1
 }
 
@@ -875,7 +893,6 @@ check_eventually "dissolving the group clears both"      "" tags_of "$M"
 # comes out of the window's size inside an unchanged layout slot. Width rather
 # than height, because tabbing takes the bar off the top - the height would move
 # whether or not the rule fired, and the width only moves if it did.
-width_of() { clients | jq -r --arg a "$1" '.[]|select(.address==$a)|.size[0]'; }
 tagrule_narrower() { [ "$(width_of "$M")" -lt "$TAGRULE_BASE" ] 2>/dev/null && echo yes || echo no; }
 tagrule_restored() { [ "$(width_of "$M")" = "$TAGRULE_BASE" ] && echo yes || echo no; }
 
