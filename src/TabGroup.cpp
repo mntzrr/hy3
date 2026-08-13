@@ -598,7 +598,14 @@ UP<Hy3TabGroup> Hy3TabGroup::create(Hy3Node& node) {
 Hy3TabGroupWrapper::Hy3TabGroupWrapper() = default;
 Hy3TabGroupWrapper::Hy3TabGroupWrapper(UP<Hy3TabGroup> tg): inner(std::move(tg)) {}
 Hy3TabGroupWrapper::Hy3TabGroupWrapper(Hy3TabGroupWrapper&&) = default;
-Hy3TabGroupWrapper& Hy3TabGroupWrapper::operator=(Hy3TabGroupWrapper&&) = default;
+Hy3TabGroupWrapper& Hy3TabGroupWrapper::operator=(Hy3TabGroupWrapper&& other) {
+	// the defaulted move-assign destroyed a held group with no release() -
+	// no beginDestroy(), no g_destroyingTabGroups deferral - when the
+	// steal-titlebar path in collapseSingleParentInternal overwrote one.
+	release();
+	inner = std::move(other.inner);
+	return *this;
+}
 Hy3TabGroupWrapper::~Hy3TabGroupWrapper() { release(); }
 
 void Hy3TabGroupWrapper::release() {
@@ -839,7 +846,7 @@ void Hy3TabGroup::renderTabBar() {
 
 			CBox window_box = {wpos.x, wpos.y, wsize.x, wsize.y};
 			auto border = window->getRealBorderSize();
-			auto radius = *window_rounding + border;
+			auto radius = (*window_rounding + border) * scale;
 			window_box.expand(border);
 			window_box.scale(scale);
 
@@ -904,7 +911,6 @@ std::vector<UP<IPassElement>> Hy3TabPassElement::draw() {
 
 bool Hy3TabPassElement::needsPrecomputeBlur() {
 	// clang-format off
-	static const auto s_opacity = CConfigValue<Config::FLOAT>("plugin:hy3:tabs:opacity");
 	static const auto blur = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:blur");
 	static const auto col_active = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:active");
 	static const auto col_border_active = CConfigValue<Config::INTEGER>("plugin:hy3:tabs:colors:active_border");
@@ -926,8 +932,11 @@ bool Hy3TabPassElement::needsPrecomputeBlur() {
 	// clang-format on
 
 	if (!*blur) return false;
-	if (*s_opacity < 1.0) return false;
 
+	// fork: opacity used to early-return false here, but it is a flat
+	// post-multiplier in the shader (tab.frag), not part of the alpha the blur
+	// path keys on - so with opacity < 1 *and* any translucent colour the
+	// shader sampled a blur framebuffer that was never precomputed.
 	auto needsblur = [](const auto& col) { return CHyprColor(*col).a < 1.0; };
 	return needsblur(col_active) || needsblur(col_border_active) || needsblur(col_focused)
 	    || needsblur(col_border_focused) || needsblur(col_urgent) || needsblur(col_border_urgent)

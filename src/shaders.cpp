@@ -12,7 +12,10 @@ Hy3Shaders::Hy3Shaders() {
 	{
 		auto& s = this->tab;
 		s.program = makeShared<CShader>();
-		if (!s.program->createProgram(std::string(SHADER_TAB_VERT), std::string(SHADER_TAB_FRAG))) {
+		// dynamic=true: without it a compile failure ends in RASSERT (which
+		// raises SIGABRT even in release builds) rather than returning false,
+		// and the fallback in instance() would be dead code.
+		if (!s.program->createProgram(std::string(SHADER_TAB_VERT), std::string(SHADER_TAB_FRAG), true)) {
 			throw std::runtime_error("hy3 tab shader compilation fails");
 		}
 		auto program = s.program->program();
