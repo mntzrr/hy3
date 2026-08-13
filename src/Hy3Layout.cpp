@@ -1170,6 +1170,11 @@ Hy3Node* Hy3Layout::focusMonitor(ShiftDirection direction, bool warp) {
 
 		if (next_workspace) {
 			auto target_window = next_workspace->getLastFocusedWindow();
+			// getLastFocusedWindow() can still name a window just moved off
+			// this workspace - its m_workspace already reports the destination,
+			// and focusing it would chase it back across monitors. refocusMonitor
+			// guards the same way.
+			if (target_window && target_window->m_workspace != next_workspace) target_window = nullptr;
 			if (target_window) {
 				found = true;
 
@@ -1188,6 +1193,7 @@ Hy3Node* Hy3Layout::focusMonitor(ShiftDirection direction, bool warp) {
 					// focus behind on the previous monitor.
 				}
 
+				g_pInputManager->unconstrainMouse();
 				Desktop::focusState()->fullWindowFocus(target_window, Desktop::FOCUS_REASON_KEYBIND);
 				// fullWindowFocus never moves the cursor; honour warp the same
 				// way the floating branch of shiftFocus does.
@@ -1502,7 +1508,10 @@ bool Hy3Layout::moveNodeToWorkspace(
 			    workspace->m_id
 			);
 			errorNotif();
-			return false;
+			// a broken state, but the windows DID move - returning false would
+			// tell moveToMonitor nothing happened and pin monitor focus to the
+			// origin while the windows sit on the target.
+			return true;
 		}
 
 		Desktop::Rule::ruleEngine()->updateAllRules();
