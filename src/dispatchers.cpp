@@ -1,4 +1,5 @@
 #include <charconv>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -389,9 +390,12 @@ static int luaToggleFocusLayer(lua_State* L) {
 	static constexpr const char* FN = "hl.plugin.hy3.toggle_focus_layer";
 	luaCheckArgCount(L, FN, 0, 1);
 
-	bool warp = true;
+	// same default as the string dispatcher: cursor:no_warps, with an explicit
+	// option overriding it. hardcoding true here ignored the global setting.
+	static const auto no_cursor_warps = CConfigValue<Config::INTEGER>("cursor:no_warps");
+	bool warp = !*no_cursor_warps;
 	if (luaHasOptionsTable(L, 1, FN))
-		warp = LuaInternal::tableOptBool(L, 1, "warp").value_or(true);
+		warp = LuaInternal::tableOptBool(L, 1, "warp").value_or(warp);
 
 	auto dspToggleFocusLayer = [](lua_State* L) -> int {
 		toggleFocusLayer(lua_toboolean(L, lua_upvalueindex(1)));
@@ -670,6 +674,10 @@ static int luaFocusTab(lua_State* L) {
 	int focus_index = 0;
 
 	if (index) {
+		// tableOptNum yields a double; casting an out-of-range (or NaN) one to
+		// int is UB. The negated comparison rejects NaN along with the range.
+		if (!(*index >= std::numeric_limits<int>::lowest() && *index <= std::numeric_limits<int>::max()))
+			return luaL_error(L, "%s: index out of range", FN);
 		focus = TabFocus::Index;
 		focus_index = static_cast<int>(*index);
 	} else {
@@ -733,13 +741,16 @@ static SDispatchResult dispatch_focustab(std::string value) {
 		auto arg = args[i];
 		if (std::from_chars(arg.data(), arg.data() + arg.size(), index).ec != std::errc {})
 			return SDispatchResult {};
-
-		hy3_log(LOG, "focustab index '{}' -> {}", arg, index);
 	} else return SDispatchResult {};
 
 	i++;
 
-	if (auto parsed_mouse = parseTabMouseArg(args[i]); parsed_mouse && *parsed_mouse != TabFocusMousePriority::Ignore) {
+	// "" (no argument) parses to Ignore but must not be consumed, or a trailing
+	// "wrap" would be eaten as the mouse argument. An explicit "ignore" must be
+	// consumed, or it falls through to the wrap check and breaks it.
+	if (auto parsed_mouse = parseTabMouseArg(args[i]);
+	    parsed_mouse && (*parsed_mouse != TabFocusMousePriority::Ignore || args[i] == "ignore"))
+	{
 		mouse = *parsed_mouse;
 		i++;
 	}
@@ -1023,7 +1034,10 @@ moveToMonitor(std::string monitor, bool follow, std::optional<bool> warp_overrid
 	auto warp_cursor = follow && warp_override.value_or(!*no_cursor_warps);
 
 	if (!hy3->moveNodeToMonitor(hy3->workspace().get(), monitor, follow, warp_cursor))
-		return { .success = false, .error = "no monitor matching '" + monitor + "'" };
+		return {
+		    .success = false,
+		    .error = "no monitor matching '" + monitor + "', or the move was refused",
+		};
 
 	return SDispatchResult {};
 }
