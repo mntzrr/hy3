@@ -6,6 +6,7 @@
 #   test/nested.sh sig                print its instance signature
 #   test/nested.sh ctl <args...>      run hyprctl against it
 #   test/nested.sh stop               kill it
+#   test/nested.sh rundir             print its per-checkout runtime directory
 #
 # Each monitor is a nested Wayland window on the host compositor. They are laid
 # out left to right at whatever size the host gives them - see the note in
