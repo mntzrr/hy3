@@ -13,4 +13,4 @@ set -eu
 
 rm -rf build-cc
 cmake -DCMAKE_BUILD_TYPE=Debug -DHY3_NO_VERSION_CHECK=TRUE -B build-cc
-bear -- cmake --build build-cc -j16
+bear -- cmake --build build-cc -j"$(nproc)"

@@ -111,4 +111,5 @@ endif()
 
 target_include_directories(hy3 SYSTEM PRIVATE ${DEPS_INCLUDE_DIRS} ${LUA_INCLUDE_DIRS})
 
+include(GNUInstallDirs)
 install(TARGETS hy3 LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})

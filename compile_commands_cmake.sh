@@ -5,6 +5,7 @@
 # documented Release configure asked for.
 set -eu
 
+rm -rf build-cc
 cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -B build-cc
 mv build-cc/compile_commands.json .
 sed -i 's/-std=gnu++23/-std=gnu++2b/g' compile_commands.json
