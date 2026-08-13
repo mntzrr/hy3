@@ -39,6 +39,10 @@ If that sounds interesting, check out the [website](https://quickshell.outfoxxed
 -----
 
 ### Stability
+**(fork)** This fork does not cut releases; `master` is the only supported ref and is
+expected to build against the current hyprland release. The text below is upstream's and
+describes the upstream repo.
+
 hy3 has a tagged release for each hyprland update, and master tracks hyprland's main branch.
 If you are running a release version of hyprland then use the matching tagged hy3 version.
 If you are running an untagged hyprland release then use the `master` branch of hy3.
@@ -59,12 +63,10 @@ When reporting bugs, please include:
 ## Installation
 
 > [!IMPORTANT]
-> The master branch of hy3 follows the master branch of hyprland.
-> Attempting to use a mismatched hyprland release will result in failure when building or loading hy3.
->
-> To use hy3 against a release version of hyprland,
-> check out the matching hy3 tag for the hyprland version.
-> hy3 tags are formatted as `hl{version}` where `{version}` matches the release version of hyprland.
+> hy3 must be built against the hyprland release you run - a mismatch fails the build or
+> refuses to load. This fork's `master` tracks recent hyprland releases (currently 0.56.x)
+> and does not cut its own tags: the `hl{version}` tags in this repo are upstream's commits
+> and carry none of the fork's changes. Follow `master`.
 
 ### Nix
 #### Hyprland home manager module
@@ -87,9 +89,9 @@ Assuming you use hyprland's home manager module, you can easily integrate hy3 by
     # or "github:hyprwm/Hyprland?submodules=1" to follow the development branch
 
     hy3 = {
-      url = "github:outfoxxed/hy3?ref=hl{version}"; # where {version} is the hyprland release version
-      # or "github:outfoxxed/hy3" to follow the development branch.
-      # (you may encounter issues if you dont do the same for hyprland)
+      url = "github:mntzrr/hy3";
+      # (fork) no ref: master tracks recent hyprland releases. the hl* tags are
+      # upstream's commits and lack the fork's changes.
       inputs.hyprland.follows = "hyprland";
     };
   };
@@ -140,11 +142,29 @@ isn't capable of locking hy3 builds to the correct hyprland version.
 >
 > in your hyprland.conf. (See [the wiki](https://wiki.hyprland.org/Plugins/Using-Plugins/) for details.)
 
-To install hy3 via hyprpm run
+To install this fork via hyprpm run
 
 ```sh
-hyprpm add https://github.com/outfoxxed/hy3
+hyprpm remove hy3                                   # if upstream's hy3 is installed; only one may own the name
+hyprpm add https://github.com/mntzrr/hy3 master
+hyprpm enable hy3
 ```
+
+> [!WARNING]
+> **(fork)** Pass the `master` revision. Without it hyprpm consults `hyprpm.toml`'s
+> `commit_pins` table, which is upstream's: it maps hyprland versions to *upstream* hy3
+> commits, so on a pinned hyprland version (the table currently stops at 0.56.0) hyprpm
+> checks out an upstream commit and silently drops every fork commit. With no pin matching
+> (hyprland 0.56.1 and later) it falls through to this fork's branch head either way.
+>
+> After installing or updating, confirm what actually landed:
+>
+> ```sh
+> grep hash /var/cache/hyprpm/$USER/hy3/state.toml   # must equal this repo's HEAD
+> ```
+>
+> A rebuilt plugin is not swapped into a running session - the new build takes effect on
+> your next login.
 
 To update hy3 (and all other plugins), run
 
@@ -183,6 +203,10 @@ The plugin will be located at `build/libhy3.so`, and you can load it normally
 Note that the hyprland headers and pkg-config file **MUST be installed correctly, for the target version of hyprland**.
 
 ### Arch (AUR)
+
+> [!NOTE]
+> **(fork)** Both AUR packages build upstream, not this fork. To package the fork,
+> build manually (below) or use hyprpm with the fork URL (above).
 
 > [!NOTE]
 > This method of installation is deprecated and you should use *hyprpm* instead,
@@ -242,11 +266,20 @@ plugin {
     # 2 = keep the nested group only if its parent is a tab group
     node_collapse_policy = <int> # default: 2
 
+    # when a workspace holds a single window, treat it as fullscreen for tab bar
+    # purposes: the bar is hidden for it
+    no_gaps_when_only = <int> # default: 0
+
     # offset from group split direction when only one window is in a group
     group_inset = <int> # default: 10
 
     # if a tab group will automatically be created for the first window spawned in a workspace
     tab_first_window = <bool>
+
+    # (fork) tag windows with hy3's grouping state - hy3_grouped when inside any
+    # group, hy3_tabbed when inside a tab group - so windowrules can react to it.
+    # backported from upstream PR #327.
+    tag_windows = <bool> # default: false
 
     # tab group settings
     tabs {
@@ -254,7 +287,7 @@ plugin {
       height = <int> # default: 22
 
       # padding between the tab bar and its focused node
-      padding = <int> # default: 6
+      padding = <int> # default: 5
 
       # the tab bar should animate in/out from the top instead of below the window
       from_top = <bool> # default: false
@@ -356,6 +389,12 @@ plugin {
     # adjacent monitor instead of wrapping it into a new group
     movewindow_monitor_fallthrough = <bool> # default: false
 
+    # (fork) hy3:movewindow also moves a focused *floating* window - snapped to
+    # the work-area edge in that direction, like hyprland's own movewindow, and
+    # across monitors once against the edge if movewindow_monitor_fallthrough
+    # is also on
+    movewindow_floating = <bool> # default: false
+
     # (fork) hy3:changefocus raise stops at the workspace group instead of
     # wrapping back to the focused window, the way lower already stops at one
     changefocus_raise_stops = <bool> # default: false
@@ -383,6 +422,7 @@ plugin {
    - `visible` - only move between visible nodes, not hidden tabs
    - `monitor` - **(fork)** at the edge of the layout, move the node to the adjacent monitor instead of wrapping it into a new group. implied by `plugin:hy3:movewindow_monitor_fallthrough`.
    - `warp` / `nowarp` - **(fork)** whether to warp the mouse along when the move crosses a monitor. defaults to `cursor:no_warps`. a move that stays inside one monitor never warps, with or without this.
+   - with `plugin:hy3:movewindow_floating` set, this also moves a focused **floating** window - **(fork)** snapped to the work-area edge in that direction, an edge being a stop rather than a step, and across monitors once against the edge when monitor fallthrough is on.
  - `hy3:movetoworkspace, <workspace>, [follow, [warp | nowarp]]` - move the active node to the given workspace
    - `follow` - change focus to the given workspace when moving the selected node
    - `warp` - warp the mouse to the selected window, even if `general:no_cursor_warps` is true.
@@ -449,7 +489,7 @@ hy3.move_focus("l" | "r" | "u" | "d" | "left" | "right" | "up" | "down", {
 })
 
 hy3.toggle_focus_layer({
-	warp = true | false, -- default: true
+	warp = true | false, -- default: follows cursor:no_warps
 })
 
 hy3.warp_cursor()
