@@ -918,7 +918,6 @@ std::generator<CWindow&> Hy3Node::windows(bool visibleOnly) {
 
 std::string Hy3Node::debugNode() {
 	std::stringstream buf;
-	std::string addr = "0x" + std::to_string((size_t) this);
 	switch (this->type()) {
 	case Hy3NodeType::Target:
 		buf << "window(" << this << " of " << this->parent.get() << ") [hypr " << this->try_window().get() << "] size ratio: " << this->size_ratio;
@@ -986,10 +985,11 @@ static bool shouldCollapseNode(Hy3Node* node, CollapsePolicy policy) {
 	if (child->is_group()) {
 		auto& cgroup = child->as_group();
 		// a split under a *tab* parent is load-bearing - collapsing it merges
-		// the child's windows into the tab group as separate tabs.
-		if (group.isSplit() && cgroup.isSplit()
-		    && (node->is_root() || node->parent->as_group().isSplit()))
-			return true;
+		// the child's windows into the tab group as separate tabs. a split
+		// directly under the root is deliberately kept too: collapsing it
+		// changes what raise/expand see as the top of the tree (smoke.sh's
+		// changefocus-raise block catches this).
+		if (group.isSplit() && cgroup.isSplit() && node->parent->as_group().isSplit()) return true;
 		if (cgroup.children.size() == 1 && group.isTab() && cgroup.isTab()) return true;
 	}
 
@@ -1215,6 +1215,9 @@ void Hy3Node::resize(ShiftDirection direction, double delta, bool no_animation) 
 	{
 		double parent_size =
 		    getAxis(direction) == Axis::Horizontal ? parent_node->visualBox.w : parent_node->visualBox.h;
+		// a resize landing before the first successful geometry pass would
+		// divide by a zero-sized parent and write an infinite ratio.
+		if (parent_size <= 0) return;
 		auto ratio_mod = delta * (float) containing_group.children.size() / parent_size;
 
 		const auto end_of_children = containing_group.children.end();
@@ -1230,6 +1233,12 @@ void Hy3Node::resize(ShiftDirection direction, double delta, bool no_animation) 
 
 			if (iter != end_of_children) {
 				auto* neighbor = iter->get();
+				// the outermost child is resized against the sibling in the
+				// direction it is *not* outermost in; if that doesn't hold
+				// (iter was never advanced) neighbor is this node itself and
+				// the two assignments below would collapse to an
+				// uncompensated ratio change.
+				if (neighbor == this) return;
 				auto requested_size_ratio = this->size_ratio + ratio_mod;
 				auto requested_neighbor_size_ratio = neighbor->size_ratio - ratio_mod;
 
