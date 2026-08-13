@@ -95,7 +95,7 @@ public:
 	void toggleFloating(CWorkspace* workspace, const std::string& unmount_workspace, bool warp);
 
 	void warpCursor();
-	void moveNodeToWorkspace(CWorkspace* origin, const std::string& wsname, bool follow, bool warp);
+	bool moveNodeToWorkspace(CWorkspace* origin, const std::string& wsname, bool follow, bool warp);
 	void changeFocus(FocusShift);
 	void focusTab(TabFocus target, TabFocusMousePriority, bool wrap_scroll, int index);
 	void setNodeSwallow(SetSwallowOption);

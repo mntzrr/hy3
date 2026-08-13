@@ -3,6 +3,7 @@
 #include <set>
 
 #include <dlfcn.h>
+#include <linux/input-event-codes.h>
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/output/Monitor.hpp>
 #include <hyprland/src/state/WorkspaceState.hpp>
@@ -52,8 +53,13 @@ static CollapsePolicy nodeCollapsePolicy() {
 }
 
 PHLWORKSPACE workspace_for_action(bool allow_fullscreen) {
-	auto workspace = Desktop::focusState()->monitor()->m_activeSpecialWorkspace;
-	if (!valid(workspace)) workspace = Desktop::focusState()->monitor()->m_activeWorkspace;
+	// monitor() is legitimately empty before the first monitor connects and
+	// after the last one disconnects, and hyprctl can dispatch in that window.
+	auto monitor = Desktop::focusState()->monitor();
+	if (!monitor) return nullptr;
+
+	auto workspace = monitor->m_activeSpecialWorkspace;
+	if (!valid(workspace)) workspace = monitor->m_activeWorkspace;
 
 	if (!valid(workspace)) return nullptr;
 	if (!allow_fullscreen && Fullscreen::controller()->hasFullscreen(workspace)) return nullptr;
@@ -108,7 +114,7 @@ Hy3Layout::Hy3Layout() {
 
 	m_mouseButtonListener = Event::bus()->m_events.input.mouse.button.listen(
 	    [this](IPointer::SButtonEvent event, Event::SCallbackInfo& info) {
-		    if (event.state != 1 || event.button != 272) return;
+		    if (event.state != WL_POINTER_BUTTON_STATE_PRESSED || event.button != BTN_LEFT) return;
 
 		    auto ptr_surface_resource = g_pSeatManager->m_state.pointerFocus.lock();
 		    if (!ptr_surface_resource) return;
@@ -1176,10 +1182,20 @@ Hy3Node* Hy3Layout::focusMonitor(ShiftDirection direction, bool warp) {
 						found_node->focus(warp, Desktop::FOCUS_REASON_KEYBIND);
 						return found_node;
 					}
-				} else {
-					Desktop::focusState()->fullWindowFocus(target_window, Desktop::FOCUS_REASON_KEYBIND);
-					return nullptr;
+					// fork: no node means the last-focused window is floating.
+					// fall through and focus it directly - rawMonitorFocus above
+					// only moved monitor focus, so returning here left window
+					// focus behind on the previous monitor.
 				}
+
+				Desktop::focusState()->fullWindowFocus(target_window, Desktop::FOCUS_REASON_KEYBIND);
+				// fullWindowFocus never moves the cursor; honour warp the same
+				// way the floating branch of shiftFocus does.
+				if (warp) {
+					auto box = target_window->layoutBox();
+					Hy3Layout::warpCursorToBox(box.pos(), box.size());
+				}
+				return nullptr;
 			}
 		}
 
@@ -1289,9 +1305,12 @@ bool Hy3Layout::moveToMonitor(CWorkspace* origin, PHLMONITOR target, bool follow
 	auto next_workspace = target->m_activeWorkspace;
 	if (!valid(next_workspace)) return false;
 
-	if (follow) Desktop::focusState()->rawMonitorFocus(target);
+	// move first, focus after: if the move bails (a refused destination, an
+	// origin with nothing focused) monitor focus must not jump to a screen the
+	// window never reached, and the caller needs to hear nothing happened.
+	if (!this->moveNodeToWorkspace(origin, next_workspace->m_name, follow, warp)) return false;
 
-	this->moveNodeToWorkspace(origin, next_workspace->m_name, follow, warp);
+	if (follow) Desktop::focusState()->rawMonitorFocus(target);
 
 	// the moved node keeps keyboard focus even though it is now on another
 	// screen, so hand focus back to the monitor it left.
@@ -1383,7 +1402,7 @@ static void updateTreeTabBars(Hy3Node& node) {
 }
 
 
-void Hy3Layout::moveNodeToWorkspace(
+bool Hy3Layout::moveNodeToWorkspace(
     CWorkspace* origin,
     const std::string& wsname,
     bool follow,
@@ -1393,12 +1412,12 @@ void Hy3Layout::moveNodeToWorkspace(
 
 	if (target.id == WORKSPACE_INVALID) {
 		hy3_log(ERR, "moveNodeToWorkspace called with invalid workspace {}", wsname);
-		return;
+		return false;
 	}
 
 	auto workspace = State::workspaceState()->query().id(target.id).run();
 
-	if (origin == workspace.get()) return;
+	if (origin == workspace.get()) return false;
 
 	auto* node = this->getWorkspaceFocusedNode();
 	auto focused_window = Desktop::focusState()->window();
@@ -1412,7 +1431,7 @@ void Hy3Layout::moveNodeToWorkspace(
 	               : focused_window != nullptr ? focused_window->m_workspace
 	                                           : nullptr;
 
-	if (!valid(origin_ws)) return;
+	if (!valid(origin_ws)) return false;
 
 	if (workspace == nullptr) {
 		hy3_log(LOG, "creating target workspace {} for node move", target.id);
@@ -1428,7 +1447,7 @@ void Hy3Layout::moveNodeToWorkspace(
 		g_pHyprRenderer->damageWindow(focused_window);
 		Desktop::globalWindowController()->moveWindowToWorkspace(focused_window, workspace);
 	} else {
-		if (node == nullptr) return;
+		if (node == nullptr) return false;
 
 		hy3_log(
 		    LOG,
@@ -1457,7 +1476,7 @@ void Hy3Layout::moveNodeToWorkspace(
 			    (uintptr_t) node,
 			    workspace->m_id
 			);
-			return;
+			return false;
 		}
 
 		auto* destLayout = destHy3 ? destHy3 : this;
@@ -1483,7 +1502,7 @@ void Hy3Layout::moveNodeToWorkspace(
 			    workspace->m_id
 			);
 			errorNotif();
-			return;
+			return false;
 		}
 
 		Desktop::Rule::ruleEngine()->updateAllRules();
@@ -1543,6 +1562,8 @@ void Hy3Layout::moveNodeToWorkspace(
 			refocus->focus(false, Desktop::FOCUS_REASON_KEYBIND);
 		}
 	}
+
+	return true;
 }
 
 void Hy3Layout::changeFocus(FocusShift shift) {
