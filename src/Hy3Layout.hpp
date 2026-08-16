@@ -20,6 +20,11 @@ class Hy3Layout;
 
 PHLWORKSPACE workspace_for_action(bool allow_fullscreen = false);
 
+// fork additions (not present upstream, see FORK.md)
+PHLWORKSPACE workspaceForActionRaw(bool allow_fullscreen = false);
+PHLMONITOR monitorInDirectionFrom(PHLMONITOR base, ShiftDirection);
+PHLMONITOR monitorForSelector(PHLMONITOR base, const std::string& selector);
+
 class Hy3Layout: public Layout::ITiledAlgorithm {
 public:
 	Hy3Layout();

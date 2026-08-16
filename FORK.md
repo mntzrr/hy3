@@ -220,6 +220,45 @@ feedback that the top was reached, so the overshoot is only visible after the fa
   root node is never what `raise` is handed and `node->parent` is never the null it would
   dereference there.
 
+### 7. `plugin:hy3:layout_fallback` (bool, default false)
+
+On a workspace managed by another layout — a `workspace_rule` pinning one to `scrolling`,
+say — every hy3 dispatcher used to no-op silently: `hy3InstanceForAction()` returns nullptr
+and each action function returned early. With this set, four of them delegate to Hyprland's
+native actions (`Config::Actions`, the same layer Hyprland's own Lua dispatchers call), so
+one set of binds works on hy3, scrolling, and any other tiled layout:
+
+- `move_focus` → `Config::Actions::moveFocus(...)`. The `visible` and `warp` arguments have
+  no native counterpart and are dropped on this path; cursor warping follows
+  `cursor:no_warps` natively. Focus semantics at the screen's edge are the foreign layout's
+  own — wrapping or crossing to a neighbouring monitor, per Hyprland's rules — rather than
+  hy3's.
+- `move_window` → `Config::Actions::moveInDirection(...)`. What a foreign layout does with a
+  directional move is up to that layout.
+- `toggle_floating` → `Config::Actions::floatWindow(TOGGLE_ACTION_TOGGLE)`. The
+  scratchpad-aware unmount of feature 4 has no native equivalent, so on a foreign workspace
+  this degrades to the plain float toggle.
+- `move_to_monitor` → the monitor is resolved with hy3's own selector logic (directions,
+  relative `+n`/`-n` offsets, names) and the window handed to that monitor's active
+  workspace through `Config::Actions::moveToWorkspace`, with `follow` mapped to the native
+  silent flag.
+
+- `src/Hy3Layout.cpp` — `workspace_for_action()` is split into `workspaceForActionRaw()`
+  (monitor → special → active resolution and the fullscreen guard) plus the hy3 check, and
+  `monitorInDirection()`/`monitorFromSelector()` are thin wrappers over the new free
+  `monitorInDirectionFrom()`/`monitorForSelector()`, which take the base monitor explicitly.
+  The fallback path has no `Hy3Layout` instance — that being the point — so it resolves
+  against `Desktop::focusState()->monitor()`.
+- `src/dispatchers.cpp` — a guarded delegate clause at the `!hy3` early return of each of
+  the four action functions, and a small adapter translating `Config::Actions::ActionResult`
+  (std::expected) into `SDispatchResult`, so a native failure reaches the `hyprctl` caller
+  as an error instead of looking like the silent no-op this path used to be. The Lua entry
+  points funnel into the same action functions, so both paths are covered by one hook each.
+- Explicitly **not** covered, and still no-ops on foreign workspaces: `make_group`,
+  `change_group`, `change_focus`, `focus_tab`, `expand`, `equalize`, `kill_active`,
+  `toggle_focus_layer` — group/tab concepts with no meaningful generic mapping, plus
+  `kill_active`, for which a plain close bind already exists natively.
+
 ## Backported upstream PRs
 
 Fixes that are open upstream but touch code this fork's features sit on top of. Each is a
@@ -637,7 +676,7 @@ plugin that owns every window is disruptive at best, and has crashed the composi
 
 ```sh
 test/nested.sh start 2   # nested Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 104 assertions covering everything below
+test/smoke.sh            # 121 assertions covering everything below
 test/nested.sh stop
 ```
 

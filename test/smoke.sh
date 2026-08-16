@@ -1041,6 +1041,79 @@ check_eventually "on: lower still walks back down"              "$RS_U" active_a
 check "instance survived the raises"                            "yes" "$(alive)"
 setflag changefocus_raise_stops false
 
+block "layout_fallback"
+# plugin:hy3:layout_fallback: on a workspace managed by another layout hy3's
+# dispatchers used to no-op silently. With the flag set, movefocus, movewindow,
+# togglefloating and movetomonitor delegate to hyprland's native actions
+# instead. Workspace 9 is pinned to the scrolling layout in nested.lua, which
+# is what makes it foreign here.
+#
+# The "off" phase has to come first: the flag persists on the instance, so a
+# re-run of this suite against the same instance would otherwise inherit the
+# previous run's "on".
+setflag layout_fallback false
+
+pin_mon0
+cleanup_windows
+dispatch "hl.dsp.focus({ workspace = '9' })" 0.6
+spawn t_a || { echo "could not spawn t_a" >&2; exit 1; }
+spawn t_b || { echo "could not spawn t_b" >&2; exit 1; }
+FA=$(addr_of t_a); FB=$(addr_of t_b)
+[ -n "$FA" ] && [ -n "$FB" ] || { echo "could not spawn the fallback windows" >&2; exit 1; }
+check_eventually "two windows on workspace 9"            "9 9"      ws2 "$FA" "$FB"
+
+# The block is meaningless if the workspace rule ever stops applying - every
+# assertion below would then exercise hy3 itself and fail confusingly. hyprctl
+# eval discards expression values, so the read goes through the error channel.
+ws9_layout() { ctl eval "error(tostring(hl.get_active_workspace().tiled_layout))" 2>&1 | grep -o scrolling || true; }
+require "workspace 9 runs the scrolling layout" "scrolling" ws9_layout
+
+focus "$FB"
+dispatch "hl.plugin.hy3.move_focus('l')"
+check "off: movefocus is a silent no-op"                 "$FB"      "$(active_addr)"
+
+setflag layout_fallback true
+
+dispatch "hl.plugin.hy3.move_focus('l')"
+check_eventually "on: movefocus delegates natively"      "$FA"      active_addr
+
+# What the native move does with a direction is the foreign layout's business
+# - on scrolling it pulls the window into the column to its left. The
+# delegation itself, not the geometry, is what is asserted: the window moved
+# left of where it was.
+focus "$FB"
+FB_X=$(left_of "$FB")
+dispatch "hl.plugin.hy3.move_window('l')"
+check_eventually "on: movewindow delegates natively"     "true"     left_of_x "$FB" "$FB_X"
+
+dispatch "hl.plugin.hy3.toggle_floating()"
+check_eventually "on: togglefloating floats"             "true"     is_floating "$FB"
+dispatch "hl.plugin.hy3.toggle_floating()"
+check_eventually "on: togglefloating unfloats"           "false"    is_floating "$FB"
+
+# follow=false maps to the native silent move: the window crosses, monitor
+# focus stays behind.
+focus "$FB"
+dispatch "hl.plugin.hy3.move_to_monitor('+1')"
+check_eventually "on: movetomonitor hands the window to mon1" "$M1"     where "$FB"
+check_eventually "on: nofollow leaves monitor focus behind"   "$M0_NAME" focused_mon
+
+# The regression half: with the flag on, an hy3 workspace answers the same
+# dispatch with hy3's own behaviour. t_b now sits alone on mon1's hy3
+# workspace, so a left focus crosses to mon0's active window - the plain hy3
+# monitor hop, flag or no flag.
+focus "$FB"
+dispatch "hl.plugin.hy3.move_focus('l')"
+check_eventually "hy3 workspaces are unaffected with the flag on" "$FA" active_addr
+
+check "instance survived the fallbacks"                  "yes"      "$(alive)"
+setflag layout_fallback false
+# Leave mon0 back on workspace 1: setup pins the monitor but not the
+# workspace, so a re-run against this same instance would otherwise spawn its
+# windows onto the scrolling workspace and fail every hy3 block for no reason
+# it names.
+dispatch "hl.dsp.focus({ workspace = '1' })" 0.6
+
 block "teardown"
 cleanup_windows
 check "instance survived the run"              "yes" "$(alive)"

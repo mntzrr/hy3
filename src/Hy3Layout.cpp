@@ -52,7 +52,10 @@ static CollapsePolicy nodeCollapsePolicy() {
 	}
 }
 
-PHLWORKSPACE workspace_for_action(bool allow_fullscreen) {
+// fork: workspace_for_action minus the hy3 check - for the layout_fallback
+// delegation in dispatchers.cpp, which needs the workspace *because* another
+// layout manages it, not despite it.
+PHLWORKSPACE workspaceForActionRaw(bool allow_fullscreen) {
 	// monitor() is legitimately empty before the first monitor connects and
 	// after the last one disconnects, and hyprctl can dispatch in that window.
 	auto monitor = Desktop::focusState()->monitor();
@@ -63,6 +66,13 @@ PHLWORKSPACE workspace_for_action(bool allow_fullscreen) {
 
 	if (!valid(workspace)) return nullptr;
 	if (!allow_fullscreen && Fullscreen::controller()->hasFullscreen(workspace)) return nullptr;
+
+	return workspace;
+}
+
+PHLWORKSPACE workspace_for_action(bool allow_fullscreen) {
+	auto workspace = workspaceForActionRaw(allow_fullscreen);
+	if (!valid(workspace)) return nullptr;
 	if (!hy3InstanceForWorkspace(workspace)) return nullptr;
 
 	return workspace;
@@ -1215,24 +1225,34 @@ Hy3Node* Hy3Layout::focusMonitor(ShiftDirection direction, bool warp) {
 	return nullptr;
 }
 
-PHLMONITOR Hy3Layout::monitorInDirection(ShiftDirection direction) {
+// fork: monitorInDirection/monitorForSelector against an explicit base
+// monitor. The Hy3Layout methods below are thin wrappers over these, so the
+// layout_fallback path in dispatchers.cpp - which has no Hy3Layout instance,
+// that being the point - can resolve a monitor the same way.
+PHLMONITOR monitorInDirectionFrom(PHLMONITOR base, ShiftDirection direction) {
+	if (!base) return nullptr;
+
 	return State::monitorState()
 	    ->query()
-	    .relativeTo(this->monitor().lock())
+	    .relativeTo(base)
 	    .inDirection(shiftToMathDirection(direction))
 	    .run();
+}
+
+PHLMONITOR Hy3Layout::monitorInDirection(ShiftDirection direction) {
+	return monitorInDirectionFrom(this->monitor().lock(), direction);
 }
 
 // fork: resolve a monitor argument accepting hy3 shift directions (l/r/u/d),
 // a relative offset (+n / -n, wrapping around the enabled monitors), and
 // hyprland's own selectors (<name>, desc:<description>, <id>).
-PHLMONITOR Hy3Layout::monitorFromSelector(const std::string& selector) {
-	if (selector.empty()) return nullptr;
+PHLMONITOR monitorForSelector(PHLMONITOR base, const std::string& selector) {
+	if (selector.empty() || !base) return nullptr;
 
-	if (selector == "l" || selector == "left") return this->monitorInDirection(ShiftDirection::Left);
-	if (selector == "r" || selector == "right") return this->monitorInDirection(ShiftDirection::Right);
-	if (selector == "u" || selector == "up") return this->monitorInDirection(ShiftDirection::Up);
-	if (selector == "d" || selector == "down") return this->monitorInDirection(ShiftDirection::Down);
+	if (selector == "l" || selector == "left") return monitorInDirectionFrom(base, ShiftDirection::Left);
+	if (selector == "r" || selector == "right") return monitorInDirectionFrom(base, ShiftDirection::Right);
+	if (selector == "u" || selector == "up") return monitorInDirectionFrom(base, ShiftDirection::Up);
+	if (selector == "d" || selector == "down") return monitorInDirectionFrom(base, ShiftDirection::Down);
 
 	// CMonitorQuery::selector does not understand relative offsets, so cycle
 	// through the monitor list by hand.
@@ -1248,8 +1268,7 @@ PHLMONITOR Hy3Layout::monitorFromSelector(const std::string& selector) {
 		auto& monitors = State::monitorState()->monitors();
 		if (monitors.empty()) return nullptr;
 
-		auto current = this->monitor().lock();
-		auto iter = std::ranges::find(monitors, current);
+		auto iter = std::ranges::find(monitors, base);
 		if (iter == monitors.end()) return nullptr;
 
 		auto count = static_cast<int>(monitors.size());
@@ -1259,6 +1278,10 @@ PHLMONITOR Hy3Layout::monitorFromSelector(const std::string& selector) {
 	}
 
 	return State::monitorState()->query().selector(selector).run();
+}
+
+PHLMONITOR Hy3Layout::monitorFromSelector(const std::string& selector) {
+	return monitorForSelector(this->monitor().lock(), selector);
 }
 
 // fork: give keyboard focus back to whatever was last focused on a monitor.

@@ -52,6 +52,12 @@ hl.monitor({ output = "WAYLAND-2", position = "1280x0", scale = 1 })
 hl.monitor({ output = "WAYLAND-3", position = "2560x0", scale = 1 })
 hl.monitor({ output = "WAYLAND-4", position = "3840x0", scale = 1 })
 
+-- One workspace on hyprland's built-in scrolling layout, so the suite has a
+-- foreign-layout workspace to exercise plugin:hy3:layout_fallback against.
+-- 9 is used by nothing else in the suite (1 and 7 are, plus the special
+-- workspaces).
+hl.workspace_rule({ workspace = "9", layout = "scrolling" })
+
 -- escape hatch: the harness normally drives everything over hyprctl, but if the
 -- instance is launched interactively these make it usable.
 hl.bind("SUPER + Q", hl.dsp.window.close())

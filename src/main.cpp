@@ -85,6 +85,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 	CONF("movewindow_monitor_fallthrough", Bool, false);
 	CONF("movewindow_floating", Bool, false);
 	CONF("changefocus_raise_stops", Bool, false);
+	CONF("layout_fallback", Bool, false);
 
 #undef CONF
 

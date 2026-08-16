@@ -341,6 +341,11 @@ hl.config({
 		-- (fork) change_focus "raise" stops at the workspace group instead of
 		-- wrapping back to the focused window, the way "lower" already stops at one
 		changefocus_raise_stops = <bool>, -- default: false
+
+		-- (fork) on a workspace managed by another layout, move_focus, move_window,
+		-- toggle_floating and move_to_monitor delegate to hyprland's native actions
+		-- instead of doing nothing - one set of binds covers hy3 and foreign layouts
+		layout_fallback = <bool>, -- default: false
 	} },
 })
 ```

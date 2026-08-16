@@ -6,11 +6,13 @@
 
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/DesktopTypes.hpp>
+#include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprutils/string/String.hpp>
 #include <hyprutils/string/VarList.hpp>
 #include <hyprland/src/config/lua/LuaBindings.hpp>
 #include <hyprland/src/config/lua/bindings/LuaBindingsInternal.hpp>
+#include <hyprland/src/config/shared/actions/ConfigActions.hpp>
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 
 #include "dispatchers.hpp"
@@ -25,6 +27,24 @@ static Hy3Layout* hy3InstanceForAction(bool allow_fullscreen = false) {
 	auto workspace = workspace_for_action(allow_fullscreen);
 	if (!valid(workspace)) return nullptr;
 	return hy3InstanceForWorkspace(workspace);
+}
+
+// fork: plugin:hy3:layout_fallback. On a workspace managed by another layout
+// hy3InstanceForAction returns nullptr and every dispatcher below used to
+// no-op silently; with this set, four of them delegate to hyprland's native
+// actions instead, so one set of binds works on hy3 and foreign layouts
+// alike. See FORK.md.
+static bool foreignLayoutFallbackEnabled() {
+	static const auto layout_fallback = CConfigValue<Config::INTEGER>("plugin:hy3:layout_fallback");
+	return *layout_fallback != 0;
+}
+
+// Config::Actions answers in std::expected; translate so a native failure
+// reaches the hyprctl caller as an error instead of looking like the silent
+// no-op this path used to be.
+static SDispatchResult toDispatchResult(Config::Actions::ActionResult result) {
+	if (result) return SDispatchResult {};
+	return {.success = false, .error = result.error().message};
 }
 
 static void luaCheckArgCount(lua_State* L, const char* fn, int min, int max) {
@@ -319,7 +339,14 @@ static ShiftDirection luaShiftArg(lua_State* L, int idx, const char* fn) {
 
 static SDispatchResult moveFocus(ShiftDirection shift, bool visible, std::optional<bool> warp_override) {
 	auto* hy3 = hy3InstanceForAction(true);
-	if (!hy3) return SDispatchResult {};
+	if (!hy3) {
+		// fork: layout_fallback. The `visible` and `warp` arguments have no
+		// native counterpart and are dropped on this path; cursor warping
+		// follows cursor:no_warps natively.
+		if (foreignLayoutFallbackEnabled() && workspaceForActionRaw(true))
+			return toDispatchResult(Config::Actions::moveFocus(shiftToMathDirection(shift)));
+		return SDispatchResult {};
+	}
 	auto ws = hy3->workspace();
 
 	static const auto no_cursor_warps = CConfigValue<Config::INTEGER>("cursor:no_warps");
@@ -451,7 +478,13 @@ static SDispatchResult moveWindow(
     std::optional<bool> warp_override
 ) {
 	auto* hy3 = hy3InstanceForAction();
-	if (!hy3) return SDispatchResult {};
+	if (!hy3) {
+		// fork: layout_fallback. What a foreign layout does with a directional
+		// move is up to that layout.
+		if (foreignLayoutFallbackEnabled() && workspaceForActionRaw(false))
+			return toDispatchResult(Config::Actions::moveInDirection(shiftToMathDirection(shift)));
+		return SDispatchResult {};
+	}
 
 	// fork: only the monitor fallthrough reads this - a move inside one monitor
 	// has never warped and still does not. cursor:no_warps is the default here
@@ -1027,7 +1060,19 @@ static SDispatchResult dispatch_debug(std::string) {
 static SDispatchResult
 moveToMonitor(std::string monitor, bool follow, std::optional<bool> warp_override) {
 	auto* hy3 = hy3InstanceForAction(true);
-	if (!hy3) return SDispatchResult {};
+	if (!hy3) {
+		// fork: layout_fallback. The monitor is resolved with hy3's own
+		// selector logic (relative +n/-n included), then the window is handed
+		// to that monitor's active workspace natively; `follow` maps to the
+		// native silent flag.
+		if (foreignLayoutFallbackEnabled() && workspaceForActionRaw(true)) {
+			auto target = monitorForSelector(Desktop::focusState()->monitor(), monitor);
+			if (!target || !valid(target->m_activeWorkspace))
+				return {.success = false, .error = "no monitor matching '" + monitor + "'"};
+			return toDispatchResult(Config::Actions::moveToWorkspace(target->m_activeWorkspace, !follow));
+		}
+		return SDispatchResult {};
+	}
 
 	static const auto no_cursor_warps = CConfigValue<Config::INTEGER>("cursor:no_warps");
 
@@ -1089,7 +1134,14 @@ static SDispatchResult dispatch_move_to_monitor(std::string value) {
 
 static SDispatchResult toggleFloating(std::string workspace, std::optional<bool> warp_override) {
 	auto* hy3 = hy3InstanceForAction(true);
-	if (!hy3) return SDispatchResult {};
+	if (!hy3) {
+		// fork: layout_fallback. The scratchpad-aware unmount has no native
+		// equivalent, so on a foreign workspace this degrades to the plain
+		// float toggle.
+		if (foreignLayoutFallbackEnabled() && workspaceForActionRaw(true))
+			return toDispatchResult(Config::Actions::floatWindow(Config::Actions::TOGGLE_ACTION_TOGGLE));
+		return SDispatchResult {};
+	}
 
 	static const auto no_cursor_warps = CConfigValue<Config::INTEGER>("cursor:no_warps");
 
