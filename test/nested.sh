@@ -160,16 +160,23 @@ host_ctl() {
 	return 1
 }
 
-# Float our nested windows on the host. Tiled, they are sized by the host's
-# layout, which makes the outputs an unpredictable size and leaves the monitors
-# misplaced relative to the positions pinned in nested.lua. Floating snaps them
-# to aquamarine's default 1280x720, which those positions assume.
+# Float our nested windows on the host, then pin their size. Tiled, they are
+# sized by the host's layout, which makes the outputs an unpredictable size
+# and leaves the monitors misplaced relative to the positions pinned in
+# nested.lua. Floating used to snap them to aquamarine's default 1280x720;
+# on current hyprland a floated window keeps its tiled size, so the 1280x720
+# those positions assume has to be set explicitly.
 float_on_host() {
 	local pid addr
 	pid=$(cat "$PIDFILE" 2>/dev/null) || return 0
 	for addr in $(host_ctl clients -j 2>/dev/null |
 		jq -r --argjson p "${pid:-0}" '.[]|select(.pid==$p and .floating==false)|.address'); do
 		host_ctl dispatch "hl.dsp.window.float({ window = 'address:$addr' })" >/dev/null 2>&1
+	done
+	for addr in $(host_ctl clients -j 2>/dev/null |
+		jq -r --argjson p "${pid:-0}" '.[]|select(.pid==$p and .floating==true
+			and (.size[0]!=1280 or .size[1]!=720))|.address'); do
+		host_ctl dispatch "hl.dsp.window.resize({ x = 1280, y = 720, window = 'address:$addr' })" >/dev/null 2>&1
 	done
 	sleep 0.8
 }
