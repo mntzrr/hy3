@@ -477,12 +477,29 @@ static SDispatchResult moveWindow(
     bool monitor,
     std::optional<bool> warp_override
 ) {
+	// fork: plugin:hy3:movewindow_swap. With this set movewindow swaps the
+	// focused window with its neighbour - the hy3:swapwindow operation on the
+	// move bind - instead of inserting into the tree. Insert-style moving is
+	// unreachable through movewindow while the flag is on; that is the
+	// contract, not an oversight.
+	static const auto movewindow_swap = CConfigValue<Config::INTEGER>("plugin:hy3:movewindow_swap");
+
 	auto* hy3 = hy3InstanceForAction();
 	if (!hy3) {
 		// fork: layout_fallback. What a foreign layout does with a directional
-		// move is up to that layout.
+		// move is up to that layout; movewindow_swap flips the delegation to a
+		// swap, matching what the flag does on hy3 workspaces.
 		if (foreignLayoutFallbackEnabled() && workspaceForActionRaw(false))
-			return toDispatchResult(Config::Actions::moveInDirection(shiftToMathDirection(shift)));
+			return toDispatchResult(
+			    *movewindow_swap != 0 ? Config::Actions::swapInDirection(shiftToMathDirection(shift))
+			                          : Config::Actions::moveInDirection(shiftToMathDirection(shift)));
+		return SDispatchResult {};
+	}
+
+	// fork: movewindow_swap on an hy3 workspace. once/visible/monitor/warp are
+	// insert-move concepts with no meaning for a swap and are ignored here.
+	if (*movewindow_swap != 0) {
+		hy3->swapWindow(shift);
 		return SDispatchResult {};
 	}
 

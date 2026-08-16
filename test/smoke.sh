@@ -1228,6 +1228,87 @@ setflag layout_fallback false
 # its first windows onto whatever workspace mon0 is left on.
 dispatch "hl.dsp.focus({ workspace = '1' })" 0.6
 
+block "movewindow_swap"
+# plugin:hy3:movewindow_swap: with the flag set, hy3:movewindow swaps the
+# focused window with its neighbour instead of inserting it into the tree -
+# the hy3:swapwindow operation on the move bind. once/visible/monitor/warp
+# have no meaning for a swap and are ignored; insert-style moving is
+# unreachable through movewindow while the flag is on, which is the contract.
+# The off behaviour is upstream's and exercised by every movewindow block
+# above, so only the on path is asserted here.
+#
+# The flag persists on the instance, so the off-first ordering of the other
+# flag blocks applies here too: a re-run against the same instance would
+# otherwise inherit the previous run's "on".
+setflag movewindow_swap false
+
+# Same off-center split as the swapwindow block: unequal slots pin down that
+# the *slot* keeps its size and only the window inside it moves.
+pin_mon0
+cleanup_windows
+spawn t_a || { echo "could not spawn t_a" >&2; exit 1; }
+spawn t_b || { echo "could not spawn t_b" >&2; exit 1; }
+MA=$(addr_of t_a); MB=$(addr_of t_b)
+[ -n "$MA" ] && [ -n "$MB" ] || { echo "could not spawn the movewindows" >&2; exit 1; }
+require "movewindows on mon0" "$M0 $M0" where2 "$MA" "$MB"
+
+focus "$MA"
+dispatch "hl.dsp.window.resize({ x = 100, y = 0, relative = true })" 0.4
+GA=$(stable geom "$MA"); GB=$(stable geom "$MB")
+check "the split is off-center" "true" \
+	"$([ "$(width_of "$MA")" != "$(width_of "$MB")" ] && echo true || echo false)"
+
+setflag movewindow_swap true
+
+dispatch "hl.plugin.hy3.move_window('r')"
+check_eventually "on: each window owns the other's box"           "$GB $GA" swap_geoms "$MA" "$MB"
+check_eventually "on: focus stays with the window, not the slot"  "$MA" active_addr
+
+dispatch "hl.plugin.hy3.move_window('l')"
+check_eventually "on: swapping back restores both boxes"          "$GA $GB" swap_geoms "$MA" "$MB"
+
+# At the edge of the layout there is nothing to swap with: a no-op, as for
+# hy3:swapwindow - and no monitor fallthrough either, whatever
+# movewindow_monitor_fallthrough is set to.
+pin_mon0
+cleanup_windows
+spawn t_c || { echo "could not spawn t_c" >&2; exit 1; }
+MC=$(addr_of t_c)
+[ -n "$MC" ] || { echo "could not spawn the edge window" >&2; exit 1; }
+check_eventually "single window on mon0"                          "$M0" where "$MC"
+
+focus "$MC"
+GC=$(stable geom "$MC")
+dispatch "hl.plugin.hy3.move_window('r')"
+check "edge: geometry unchanged"                                  "$GC" "$(geom "$MC")"
+check "edge: focus does not cross to mon1"                        "$M0_NAME" "$(focused_mon)"
+
+# The fallback path flips with the flag: on a foreign layout, with
+# layout_fallback set, movewindow delegates to the native swapInDirection
+# rather than moveInDirection. Workspace 9 is pinned to scrolling, as above.
+setflag layout_fallback false
+pin_mon0
+cleanup_windows
+dispatch "hl.dsp.focus({ workspace = '9' })" 0.6
+spawn t_a || { echo "could not spawn t_a" >&2; exit 1; }
+spawn t_b || { echo "could not spawn t_b" >&2; exit 1; }
+MA=$(addr_of t_a); MB=$(addr_of t_b)
+[ -n "$MA" ] && [ -n "$MB" ] || { echo "could not spawn the fallback movewindows" >&2; exit 1; }
+check_eventually "two windows on workspace 9"                     "9 9" ws2 "$MA" "$MB"
+require "workspace 9 runs the scrolling layout" "scrolling" ws9_layout
+
+setflag layout_fallback true
+focus "$MB"
+GA=$(stable geom "$MA"); GB=$(stable geom "$MB")
+dispatch "hl.plugin.hy3.move_window('l')"
+check_eventually "on ws9: movewindow delegates to a native swap"  "$GB $GA" swap_geoms "$MA" "$MB"
+
+check "instance survived the movewindow swaps"                    "yes" "$(alive)"
+setflag movewindow_swap false
+setflag layout_fallback false
+# Leave mon0 back on workspace 1, as the other workspace-9 blocks do.
+dispatch "hl.dsp.focus({ workspace = '1' })" 0.6
+
 block "teardown"
 cleanup_windows
 check "instance survived the run"              "yes" "$(alive)"

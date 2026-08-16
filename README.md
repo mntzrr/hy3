@@ -347,6 +347,12 @@ hl.config({
 		-- native actions instead of doing nothing - one set of binds covers hy3
 		-- and foreign layouts
 		layout_fallback = <bool>, -- default: false
+
+		-- (fork) move_window swaps the focused window with its neighbour instead
+		-- of inserting it into the tree - the swap_window operation on the move
+		-- bind. once/visible/monitor/warp are ignored on this path, and with
+		-- layout_fallback the foreign-layout delegation flips to a swap too
+		movewindow_swap = <bool>, -- default: false
 	} },
 })
 ```

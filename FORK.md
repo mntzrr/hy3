@@ -289,6 +289,26 @@ bind already goes through `hl.plugin.hy3.*`.
 - With `plugin:hy3:layout_fallback` (feature 7), delegates to
   `Config::Actions::swapInDirection` on foreign layouts.
 
+### 9. `plugin:hy3:movewindow_swap` (bool, default false)
+
+With this set, `hy3:movewindow` stops inserting and swaps the focused window with
+its neighbour instead — the `hy3:swapwindow` operation (feature 8) on the move
+bind, for configs that want swap semantics without a second set of binds.
+
+- `src/main.cpp` — one `CONF` in the fork additions block.
+- `src/dispatchers.cpp` — two guarded branches in `moveWindow()`: on an hy3
+  workspace it calls `swapWindow(shift)` instead of `shiftWindow(...)`; on the
+  `layout_fallback` path the delegation flips from
+  `Config::Actions::moveInDirection` to `Config::Actions::swapInDirection`.
+- movewindow's other arguments — `once`, `visible`, `monitor`, `warp` — are
+  insert-move concepts and are **ignored** while the flag is on. In particular
+  there is no monitor fallthrough at the layout edge, matching `hy3:swapwindow`.
+- Insert-style moving is unreachable through `hy3:movewindow` while the flag is
+  on. That is the contract, not something to work around — the dispatcher
+  becomes swap and nothing else changes. `hy3:swapwindow` itself is unaffected.
+- Default-off, as every fork flag: with it unset, `hy3:movewindow` behaves
+  exactly as before.
+
 ## Backported upstream PRs
 
 Fixes that are open upstream but touch code this fork's features sit on top of. Each is a
@@ -706,7 +726,7 @@ plugin that owns every window is disruptive at best, and has crashed the composi
 
 ```sh
 test/nested.sh start 2   # nested Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 141 assertions covering everything below
+test/smoke.sh            # 153 assertions covering everything below
 test/nested.sh stop
 ```
 
