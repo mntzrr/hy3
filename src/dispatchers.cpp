@@ -1208,6 +1208,42 @@ static SDispatchResult dispatch_togglefloating(std::string value) {
 	return toggleFloating(workspace, warp_override);
 }
 
+static SDispatchResult swapWindow(ShiftDirection shift) {
+	auto* hy3 = hy3InstanceForAction();
+	if (!hy3) {
+		// fork: layout_fallback - native swapwindow semantics on foreign
+		// layouts. What a foreign layout swaps with a direction is up to that
+		// layout.
+		if (foreignLayoutFallbackEnabled() && workspaceForActionRaw(false))
+			return toDispatchResult(Config::Actions::swapInDirection(shiftToMathDirection(shift)));
+		return SDispatchResult {};
+	}
+
+	hy3->swapWindow(shift);
+	return SDispatchResult {};
+}
+
+static int luaSwapWindow(lua_State* L) {
+	static constexpr const char* FN = "hl.plugin.hy3.swap_window";
+	luaCheckArgCount(L, FN, 1, 1);
+
+	auto dspSwapWindow = [](lua_State* L) -> int {
+		swapWindow(static_cast<ShiftDirection>(lua_tointeger(L, lua_upvalueindex(1))));
+		return 0;
+	};
+
+	lua_pushinteger(L, static_cast<lua_Integer>(luaShiftArg(L, 1, FN)));
+	lua_pushcclosure(L, dspSwapWindow, 1);
+	return 1;
+}
+
+static SDispatchResult dispatch_swapwindow(std::string value) {
+	auto args = CVarList(value);
+	auto shift = parseShiftArg(args[0]);
+	if (!shift) return SDispatchResult {};
+	return swapWindow(*shift);
+}
+
 static void registerLuaDispatchers() {
 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "make_group", luaMakeGroup);
 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "change_group", luaChangeGroup);
@@ -1229,6 +1265,7 @@ static void registerLuaDispatchers() {
 	// fork additions
 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "move_to_monitor", luaMoveToMonitor);
 	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "toggle_floating", luaToggleFloating);
+	HyprlandAPI::addLuaFunction(PHANDLE, "hy3", "swap_window", luaSwapWindow);
 }
 
 void registerDispatchers() {
@@ -1252,6 +1289,7 @@ void registerDispatchers() {
 	// fork additions
 	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:movetomonitor", dispatch_move_to_monitor);
 	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:togglefloating", dispatch_togglefloating);
+	HyprlandAPI::addDispatcherV2(PHANDLE, "hy3:swapwindow", dispatch_swapwindow);
 
 	registerLuaDispatchers();
 }

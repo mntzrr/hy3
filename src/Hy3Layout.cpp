@@ -1149,6 +1149,47 @@ void Hy3Layout::shiftFocus(
 	}
 }
 
+// fork: hy3:swapwindow / hl.plugin.hy3.swap_window - see FORK.md.
+//
+// swapTargets above is what made hyprland's own swapwindow work under hy3
+// (#211); this is the hy3-native interface to the same machinery. The native
+// dispatcher finds its swap partner by raw geometry, which is not group-aware
+// - inside a tab group the geometric neighbour can be a hidden tab - so the
+// neighbour is found with the same traversal shiftFocus uses, which resolves
+// a group to its visible window.
+//
+// Tiled-only: a floating window is not in the tree, so getWorkspaceFocusedNode
+// would answer with whatever tiled node last had focus and the swap would
+// happen behind the user's back (#223). getWorkspaceFocusedNodeIfTiled is null
+// while a floating window holds focus, which makes that a no-op;
+// movewindow_floating owns the floating story. The fullscreen bail is one
+// level up, in hy3InstanceForAction.
+//
+// At the edge of the layout there is nothing to swap with: a no-op, with no
+// monitor fallthrough - that is movewindow's opt-in story, not swap's.
+// focus_fallthrough=false is what stops shiftOrGetFocus from focusing the
+// adjacent monitor on its way out.
+void Hy3Layout::swapWindow(ShiftDirection direction) {
+	auto* node = this->getWorkspaceFocusedNodeIfTiled();
+	if (node == nullptr || !node->is_target()) return;
+
+	auto* neighbor =
+	    this->shiftOrGetFocus(*node, direction, false, false, false, false, false, false);
+	if (neighbor == nullptr || !neighbor->is_target()) return;
+
+	// try_target, not as_target: a live node can hold an expired WP, and
+	// as_target() throws on one - out of a dispatcher, into the compositor.
+	auto target_a = node->try_target();
+	auto target_b = neighbor->try_target();
+	if (!target_a || !target_b) return;
+
+	// ITarget::swap rewrites CSpace::m_targets, calls swapTargets once per
+	// algorithm and recalculates. hy3's swapTargets then does the slot
+	// exchange, tag sync and focus marking. No custom refocus here: focus
+	// follows whatever that produces, which the suite pins down.
+	target_a->swap(target_b);
+}
+
 // fork: true if the user is currently focused on a window living on a special
 // (scratchpad) workspace. deliberately keyed off the focused window rather than
 // the layout's workspace - a visible-but-unfocused scratchpad should not stop
@@ -2219,7 +2260,8 @@ Hy3Node* Hy3Layout::shiftOrGetFocus(
     bool once,
     bool visible,
     bool monitor_fallthrough,
-    bool warp
+    bool warp,
+    bool focus_fallthrough
 ) {
 	auto* expand_actor = &node.getExpandActor();
 	auto* break_origin = &expand_actor->getPlacementActor();
@@ -2266,7 +2308,10 @@ Hy3Node* Hy3Layout::shiftOrGetFocus(
 			// to every caller that means "nothing further to focus", which is
 			// exactly right once focusMonitor has done the work.
 			if (!shift) {
-				focusMonitor(direction, warp);
+				// fork: swapWindow passes focus_fallthrough=false - at the edge
+				// of the layout a swap is a no-op, not a focus hop to the
+				// adjacent monitor.
+				if (focus_fallthrough) focusMonitor(direction, warp);
 				return nullptr;
 			}
 

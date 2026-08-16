@@ -343,8 +343,9 @@ hl.config({
 		changefocus_raise_stops = <bool>, -- default: false
 
 		-- (fork) on a workspace managed by another layout, move_focus, move_window,
-		-- toggle_floating and move_to_monitor delegate to hyprland's native actions
-		-- instead of doing nothing - one set of binds covers hy3 and foreign layouts
+		-- swap_window, toggle_floating and move_to_monitor delegate to hyprland's
+		-- native actions instead of doing nothing - one set of binds covers hy3
+		-- and foreign layouts
 		layout_fallback = <bool>, -- default: false
 	} },
 })
@@ -438,4 +439,6 @@ hy3.toggle_floating({
 	workspace = "<workspace>", -- default: the workspace underneath the scratchpad
 	warp = true | false,       -- default: follows cursor:no_warps
 })
+
+hy3.swap_window("l" | "r" | "u" | "d" | "left" | "right" | "up" | "down")
 ```

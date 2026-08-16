@@ -224,7 +224,7 @@ feedback that the top was reached, so the overshoot is only visible after the fa
 
 On a workspace managed by another layout — a `workspace_rule` pinning one to `scrolling`,
 say — every hy3 dispatcher used to no-op silently: `hy3InstanceForAction()` returns nullptr
-and each action function returned early. With this set, four of them delegate to Hyprland's
+and each action function returned early. With this set, five of them delegate to Hyprland's
 native actions (`Config::Actions`, the same layer Hyprland's own Lua dispatchers call), so
 one set of binds works on hy3, scrolling, and any other tiled layout:
 
@@ -235,6 +235,8 @@ one set of binds works on hy3, scrolling, and any other tiled layout:
   hy3's.
 - `move_window` → `Config::Actions::moveInDirection(...)`. What a foreign layout does with a
   directional move is up to that layout.
+- `swap_window` → `Config::Actions::swapInDirection(...)`. Native `swapwindow` semantics;
+  what a foreign layout swaps with a direction is up to that layout.
 - `toggle_floating` → `Config::Actions::floatWindow(TOGGLE_ACTION_TOGGLE)`. The
   scratchpad-aware unmount of feature 4 has no native equivalent, so on a foreign workspace
   this degrades to the plain float toggle.
@@ -250,7 +252,7 @@ one set of binds works on hy3, scrolling, and any other tiled layout:
   The fallback path has no `Hy3Layout` instance — that being the point — so it resolves
   against `Desktop::focusState()->monitor()`.
 - `src/dispatchers.cpp` — a guarded delegate clause at the `!hy3` early return of each of
-  the four action functions, and a small adapter translating `Config::Actions::ActionResult`
+  the five action functions, and a small adapter translating `Config::Actions::ActionResult`
   (std::expected) into `SDispatchResult`, so a native failure reaches the `hyprctl` caller
   as an error instead of looking like the silent no-op this path used to be. The Lua entry
   points funnel into the same action functions, so both paths are covered by one hook each.
@@ -258,6 +260,34 @@ one set of binds works on hy3, scrolling, and any other tiled layout:
   `change_group`, `change_focus`, `focus_tab`, `expand`, `equalize`, `kill_active`,
   `toggle_focus_layer` — group/tab concepts with no meaningful generic mapping, plus
   `kill_active`, for which a plain close bind already exists natively.
+
+### 8. `hy3:swapwindow` / `hy3.swap_window`
+
+Swaps the focused window with its neighbour in a direction. `swapTargets` (the #211
+fix, below) made hyprland's *native* `swapwindow` work under hy3; this is the
+hy3-native interface to the same machinery, for configs where every other movement
+bind already goes through `hl.plugin.hy3.*`.
+
+- `src/Hy3Layout.cpp` — `Hy3Layout::swapWindow()`. The neighbour is found with the
+  same `shiftOrGetFocus` traversal `shiftFocus` uses, which resolves a group to its
+  visible window. The native dispatcher finds its swap partner by raw geometry, which
+  is not group-aware — inside a tab group the geometric neighbour can be a hidden tab.
+  That lookup is the reason the dispatcher exists.
+- The swap itself goes through `ITarget::swap`, so the slot-exchange contract is the
+  one `swapTargets` already implements: the box, size ratio, group membership and
+  focus marker stay with the slot, and only the window moves.
+- **Tiled-only.** A floating window is not in the tree, so a floating focus is a
+  no-op rather than a swap of whatever tiled node last had focus (#223);
+  `movewindow_floating` owns the floating story.
+- At the edge of the layout there is nothing to swap with: a no-op, with no monitor
+  fallthrough — that is movewindow's opt-in story, not swap's. `shiftOrGetFocus`
+  grew a trailing defaulted `focus_fallthrough` parameter for this, so the neighbour
+  lookup does not hop focus to the adjacent monitor on its way out.
+- Focus stays with the window, not the slot — the same semantics native `swapwindow`
+  has under hy3, produced by the `markFocused` half of `swapTargets` with no custom
+  refocus on top. Verified in the suite.
+- With `plugin:hy3:layout_fallback` (feature 7), delegates to
+  `Config::Actions::swapInDirection` on foreign layouts.
 
 ## Backported upstream PRs
 
@@ -676,7 +706,7 @@ plugin that owns every window is disruptive at best, and has crashed the composi
 
 ```sh
 test/nested.sh start 2   # nested Hyprland, this build loaded, two 1280x720 monitors
-test/smoke.sh            # 121 assertions covering everything below
+test/smoke.sh            # 141 assertions covering everything below
 test/nested.sh stop
 ```
 

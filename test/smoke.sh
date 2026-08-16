@@ -262,6 +262,7 @@ alive() {
 
 # Composite readers, so a two-window assertion can be polled as one value.
 where2() { echo "$(where "$1") $(where "$2")"; }
+where4() { echo "$(where "$1") $(where "$2") $(where "$3") $(where "$4")"; }
 ws2() { echo "$(ws_of "$1") $(ws_of "$2")"; }
 floating2() { echo "$(is_floating "$1") $(is_floating "$2")"; }
 
@@ -1112,6 +1113,119 @@ setflag layout_fallback false
 # workspace, so a re-run against this same instance would otherwise spawn its
 # windows onto the scrolling workspace and fail every hy3 block for no reason
 # it names.
+dispatch "hl.dsp.focus({ workspace = '1' })" 0.6
+
+block "swapwindow"
+# hy3:swapwindow / hl.plugin.hy3.swap_window: the hy3-native interface to
+# swapTargets, the override that made *native* swapwindow work under hy3
+# (#211, above). The native dispatcher finds its swap partner by raw geometry,
+# which is not group-aware - inside a tab group the geometric neighbour can be
+# a hidden tab. This one finds the neighbour with shiftFocus's traversal,
+# which resolves a group to its visible window.
+#
+# The off-center split matters: with equal sizes "the windows exchanged boxes"
+# could be read as the windows moving, while unequal sizes pin down that the
+# *slot* keeps its size and only the window inside it moves. There is no hy3
+# resize dispatcher, so the split is resized with hyprland's own, which
+# reaches hy3's resizeTarget like any resize.
+pin_mon0
+cleanup_windows
+spawn t_a || { echo "could not spawn t_a" >&2; exit 1; }
+spawn t_b || { echo "could not spawn t_b" >&2; exit 1; }
+SA=$(addr_of t_a); SB=$(addr_of t_b)
+[ -n "$SA" ] && [ -n "$SB" ] || { echo "could not spawn the swap windows" >&2; exit 1; }
+require "swap windows on mon0" "$M0 $M0" where2 "$SA" "$SB"
+
+focus "$SA"
+dispatch "hl.dsp.window.resize({ x = 100, y = 0, relative = true })" 0.4
+GA=$(stable geom "$SA"); GB=$(stable geom "$SB")
+check "the split is off-center" "true" \
+	"$([ "$(width_of "$SA")" != "$(width_of "$SB")" ] && echo true || echo false)"
+
+dispatch "hl.plugin.hy3.swap_window('r')"
+check_eventually "each window owns the other's box"           "$GB $GA" swap_geoms "$SA" "$SB"
+check_eventually "focus stays with the window, not the slot"  "$SA" active_addr
+
+dispatch "hl.plugin.hy3.swap_window('l')"
+check_eventually "swapping back restores both boxes"          "$GA $GB" swap_geoms "$SA" "$SB"
+
+# At the edge of the layout there is nothing to swap with: a no-op, and in
+# particular no focus hop to the adjacent monitor - movewindow's monitor
+# fallthrough is opt-in and does not apply to swap. The focused monitor is the
+# oracle: the hop would show up there even with nothing on mon1 to focus.
+pin_mon0
+cleanup_windows
+spawn t_c || { echo "could not spawn t_c" >&2; exit 1; }
+SC=$(addr_of t_c)
+[ -n "$SC" ] || { echo "could not spawn the edge window" >&2; exit 1; }
+check_eventually "single window on mon0"                      "$M0" where "$SC"
+
+focus "$SC"
+GC=$(stable geom "$SC")
+dispatch "hl.plugin.hy3.swap_window('r')"
+check "edge: geometry unchanged"                              "$GC" "$(geom "$SC")"
+check "edge: focus does not cross to mon1"                    "$M0_NAME" "$(focused_mon)"
+check "edge: the window keeps focus"                          "$SC" "$(active_addr)"
+
+# The group-aware half, and the reason the dispatcher exists: swapping toward
+# a tab group must swap with the *visible* tab, where a geometric lookup can
+# pick a hidden one. h(t_w, tab(t_x, t_y, t_z)): t_w swaps with t_x and the
+# hidden two never move. The setup is #332's, one window wider.
+pin_mon0
+cleanup_windows
+for t in t_w t_x t_y t_z; do
+	spawn "$t" || { echo "could not spawn $t" >&2; exit 1; }
+done
+TW=$(addr_of t_w); TX=$(addr_of t_x); TY=$(addr_of t_y); TZ=$(addr_of t_z)
+[ -n "$TW" ] && [ -n "$TX" ] && [ -n "$TY" ] && [ -n "$TZ" ] || { echo "could not spawn the tab windows" >&2; exit 1; }
+require "tab windows on mon0" "$M0 $M0 $M0 $M0" where4 "$TW" "$TX" "$TY" "$TZ"
+
+focus "$TX"
+dispatch "hl.plugin.hy3.make_group('tab')" 0.5
+for a in "$TY" "$TZ"; do
+	focus "$a"
+	dispatch "hl.plugin.hy3.move_window('l')" 0.4
+done
+check_eventually "three windows tabbed together"              "same" geom_cmp "$TX" "$TZ"
+
+# focus t_x first, so it is the tab the traversal resolves to
+focus "$TX"
+GTW=$(stable geom "$TW"); GTX=$(stable geom "$TX"); GTY=$(stable geom "$TY")
+focus "$TW"
+dispatch "hl.plugin.hy3.swap_window('r')"
+check_eventually "swaps with the visible tab"                 "$GTW" geom "$TX"
+check_eventually "the window takes the tab slot"              "$GTX" geom "$TW"
+check "the hidden tabs never moved"                           "$GTY" "$(geom "$TY")"
+check "focus stays with the invoking window"                  "$TW" "$(active_addr)"
+
+# layout_fallback: on a foreign layout hy3 has no tree to find a neighbour in,
+# so with the flag set the swap delegates to hyprland's native swapInDirection.
+# Workspace 9 is pinned to scrolling, as in the layout_fallback block above.
+setflag layout_fallback false
+pin_mon0
+cleanup_windows
+dispatch "hl.dsp.focus({ workspace = '9' })" 0.6
+spawn t_a || { echo "could not spawn t_a" >&2; exit 1; }
+spawn t_b || { echo "could not spawn t_b" >&2; exit 1; }
+SA=$(addr_of t_a); SB=$(addr_of t_b)
+[ -n "$SA" ] && [ -n "$SB" ] || { echo "could not spawn the fallback swap windows" >&2; exit 1; }
+check_eventually "two windows on workspace 9"                 "9 9" ws2 "$SA" "$SB"
+require "workspace 9 runs the scrolling layout" "scrolling" ws9_layout
+
+focus "$SB"
+GA=$(stable geom "$SA"); GB=$(stable geom "$SB")
+dispatch "hl.plugin.hy3.swap_window('l')"
+check "off: swap_window is a silent no-op"                    "$GA $GB" "$(swap_geoms "$SA" "$SB")"
+
+setflag layout_fallback true
+focus "$SB"
+dispatch "hl.plugin.hy3.swap_window('l')"
+check_eventually "on: swap_window delegates natively"         "$GB $GA" swap_geoms "$SA" "$SB"
+
+check "instance survived the swaps"                           "yes" "$(alive)"
+setflag layout_fallback false
+# Same leave-it-clean discipline as the layout_fallback block: a re-run spawns
+# its first windows onto whatever workspace mon0 is left on.
 dispatch "hl.dsp.focus({ workspace = '1' })" 0.6
 
 block "teardown"
