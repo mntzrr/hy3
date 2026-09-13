@@ -12,7 +12,7 @@
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/config/ConfigManager.hpp>
 #include <hyprland/src/desktop/DesktopTypes.hpp>
-#include <hyprland/src/desktop/Workspace.hpp>
+#include <hyprland/src/workspace/HLWorkspace.hpp>
 #include <hyprland/src/desktop/view/window/WindowPresentation.hpp>
 #include <hyprland/src/desktop/rule/Engine.hpp>
 #include <hyprland/src/managers/SeatManager.hpp>
@@ -214,7 +214,7 @@ void Hy3Layout::newTarget(SP<Layout::ITarget> target) {
 	    "newTarget called with window {:x} (monitor: {}, workspace: {})",
 	    (uintptr_t) window.get(),
 	    window->monitorID(),
-	    target->workspace() ? target->workspace()->m_id : -1
+	    target->workspace() ? target->workspace()->addressableName() : "null"
 	);
 
 	auto* existing = this->getNodeFromTarget(target);
@@ -248,9 +248,9 @@ Hy3Node* Hy3Layout::insertNode(UP<Hy3Node> node_up, std::optional<Vector2D> foca
 	if (!valid(ws)) {
 		hy3_log(
 		    ERR,
-		    "insertNode called for node {:x} with invalid workspace id {}",
+		    "insertNode called for node {:x} with invalid workspace {}",
 		    (uintptr_t) node_up.get(),
-		    ws ? ws->m_id : -1
+		    ws ? ws->addressableName() : "null"
 		);
 		return nullptr;
 	}
@@ -315,7 +315,7 @@ Hy3Node* Hy3Layout::insertNode(UP<Hy3Node> node_up, std::optional<Vector2D> foca
 			hy3_log(
 			    ERR,
 			    "insertNode: workspace {} has neither a space nor a monitor to size its first window",
-			    ws->m_id
+			    ws->addressableName()
 			);
 			return nullptr;
 		}
@@ -522,7 +522,7 @@ void Hy3Layout::recalcGeometry(bool no_animation) {
 	auto monitor = workspace->m_monitor.lock();
 	if (!monitor) return;
 
-	hy3_log(LOG, "recalculating workspace {}", workspace->m_id);
+	hy3_log(LOG, "recalculating workspace {}", workspace->addressableName());
 
 	auto ma = monitor->logicalBoxMinusReserved();
 	auto wa = space->workArea();
@@ -1198,7 +1198,7 @@ void Hy3Layout::swapWindow(ShiftDirection direction) {
 static bool focusedOnSpecialWorkspace() {
 	auto window = Desktop::focusState()->window();
 	if (window == nullptr || !valid(window->m_workspace)) return false;
-	return window->m_workspace->m_isSpecialWorkspace;
+	return window->m_workspace->type() == Workspace::eWorkspaceType::SPECIAL;
 }
 
 Hy3Node* Hy3Layout::focusMonitor(ShiftDirection direction, bool warp) {
@@ -1367,7 +1367,7 @@ bool Hy3Layout::shiftMonitor(Hy3Node& node, ShiftDirection direction, bool follo
 // raised - into the active workspace of another monitor, keeping it intact in
 // the destination hy3 tree. unlike hyprland's own monitor move, `follow` is
 // honoured: with it unset focus is left where the user put it.
-bool Hy3Layout::moveToMonitor(CWorkspace* origin, PHLMONITOR target, bool follow, bool warp) {
+bool Hy3Layout::moveToMonitor(Workspace::CHLWorkspace* origin, PHLMONITOR target, bool follow, bool warp) {
 	if (!target || origin == nullptr) return false;
 
 	auto origin_monitor = this->monitor().lock();
@@ -1379,7 +1379,7 @@ bool Hy3Layout::moveToMonitor(CWorkspace* origin, PHLMONITOR target, bool follow
 	// move first, focus after: if the move bails (a refused destination, an
 	// origin with nothing focused) monitor focus must not jump to a screen the
 	// window never reached, and the caller needs to hear nothing happened.
-	if (!this->moveNodeToWorkspace(origin, next_workspace->m_name, follow, warp)) return false;
+	if (!this->moveNodeToWorkspace(origin, next_workspace->addressableName(), follow, warp)) return false;
 
 	if (follow) Desktop::focusState()->rawMonitorFocus(target);
 
@@ -1391,7 +1391,7 @@ bool Hy3Layout::moveToMonitor(CWorkspace* origin, PHLMONITOR target, bool follow
 }
 
 bool Hy3Layout::moveNodeToMonitor(
-    CWorkspace* origin,
+    Workspace::CHLWorkspace* origin,
     const std::string& selector,
     bool follow,
     bool warp
@@ -1402,7 +1402,7 @@ bool Hy3Layout::moveNodeToMonitor(
 // fork: scratchpad aware floating toggle. a window sitting on a special
 // workspace is unmounted onto `unmount_workspace` - or, when that is empty, the
 // workspace visible underneath it - otherwise floating is toggled as usual.
-void Hy3Layout::toggleFloating(CWorkspace* workspace, const std::string& unmount_workspace, bool warp) {
+void Hy3Layout::toggleFloating(Workspace::CHLWorkspace* workspace, const std::string& unmount_workspace, bool warp) {
 	auto window = Desktop::focusState()->window();
 
 	// prefer the focused window's workspace: a visible but unfocused scratchpad
@@ -1410,23 +1410,23 @@ void Hy3Layout::toggleFloating(CWorkspace* workspace, const std::string& unmount
 	auto* ws = window != nullptr && valid(window->m_workspace) ? window->m_workspace.get() : workspace;
 	if (ws == nullptr) return;
 
-	if (ws->m_isSpecialWorkspace) {
+	if (ws->type() == Workspace::eWorkspaceType::SPECIAL) {
 		auto target = unmount_workspace;
 
 		if (target.empty()) {
 			// a monitor's active workspace is never the special one - that is
 			// tracked separately - so this is the workspace underneath.
-			auto monitor = ws->m_monitor;
+			auto monitor = ws->m_monitor.lock();
 			if (!monitor || !valid(monitor->m_activeWorkspace)) return;
-			target = monitor->m_activeWorkspace->m_name;
+			target = monitor->m_activeWorkspace->addressableName();
 		}
 
 		this->moveNodeToWorkspace(ws, target, true, warp);
 		return;
 	}
 
-	if (window == nullptr || !ws->m_space) return;
-	ws->m_space->toggleTargetFloating(window->layoutTarget());
+	if (window == nullptr || !ws->space()) return;
+	ws->space()->toggleTargetFloating(window->layoutTarget());
 }
 
 void Hy3Layout::toggleFocusLayer(bool warp) {
@@ -1474,19 +1474,20 @@ static void updateTreeTabBars(Hy3Node& node) {
 
 
 bool Hy3Layout::moveNodeToWorkspace(
-    CWorkspace* origin,
+    Workspace::CHLWorkspace* origin,
     const std::string& wsname,
     bool follow,
     bool warp
 ) {
-	auto target = getWorkspaceIDNameFromString(operationWorkspaceForName(wsname));
+	const auto targetName = operationWorkspaceForName(wsname);
+	const bool numbered   = std::regex_match(targetName, std::regex(R"(^\d+$)"));
 
-	if (target.id == WORKSPACE_INVALID) {
+	if (!numbered && !targetName.starts_with("special") && !targetName.starts_with("name:")) {
 		hy3_log(ERR, "moveNodeToWorkspace called with invalid workspace {}", wsname);
 		return false;
 	}
 
-	auto workspace = State::workspaceState()->query().id(target.id).run();
+	auto workspace = State::workspaceState()->query().input(targetName).run();
 
 	if (origin == workspace.get()) return false;
 
@@ -1505,9 +1506,24 @@ bool Hy3Layout::moveNodeToWorkspace(
 	if (!valid(origin_ws)) return false;
 
 	if (workspace == nullptr) {
-		hy3_log(LOG, "creating target workspace {} for node move", target.id);
+		hy3_log(LOG, "creating target workspace {} for node move", targetName);
 
-		workspace = State::workspaceState()->create(target.id, origin_ws->monitorID(), target.name);
+		auto origin_monitor = origin_ws->m_monitor.lock();
+		if (!origin_monitor) return false;
+
+		if (numbered) {
+			workspace = State::workspaceState()->createNumbered(
+			    Workspace::SWorkspaceNumberedID{static_cast<Workspace::WorkspaceIDContainer>(std::stol(targetName))},
+			    origin_monitor
+			);
+		} else if (targetName == "special") {
+			workspace = State::workspaceState()->createSpecial("special", origin_monitor);
+		} else if (targetName.starts_with("special:") && targetName.size() > 8) {
+			workspace = State::workspaceState()->createSpecial(targetName.substr(8), origin_monitor);
+		} else {
+			const auto address = targetName.starts_with("name:") ? targetName.substr(5) : targetName;
+			workspace = State::workspaceState()->createNamed(address, origin_monitor, address);
+		}
 	}
 
 	const bool moved_floating =
@@ -1524,8 +1540,8 @@ bool Hy3Layout::moveNodeToWorkspace(
 		    LOG,
 		    "moving node {:x} from workspace {} to workspace {} (follow: {})",
 		    (uintptr_t) node,
-		    origin->m_id,
-		    workspace->m_id,
+		    origin->addressableName(),
+		    workspace->addressableName(),
 		    follow
 		);
 
@@ -1538,14 +1554,14 @@ bool Hy3Layout::moveNodeToWorkspace(
 		// rejected. A freshly created workspace may not have materialised one
 		// yet, and that has to stay a legal move.
 		auto* destHy3 = hy3InstanceForWorkspace(workspace);
-		if (destHy3 == nullptr && workspace->m_space && workspace->m_space->algorithm()
-		    && workspace->m_space->algorithm()->tiledAlgo().get() != nullptr)
+		if (destHy3 == nullptr && workspace->space() && workspace->space()->algorithm()
+		    && workspace->space()->algorithm()->tiledAlgo().get() != nullptr)
 		{
 			hy3_log(
 			    ERR,
 			    "refusing to move node {:x} to workspace {}: it is not running hy3",
 			    (uintptr_t) node,
-			    workspace->m_id
+			    workspace->addressableName()
 			);
 			return false;
 		}
@@ -1558,7 +1574,7 @@ bool Hy3Layout::moveNodeToWorkspace(
 		g_suppressInsert = true;
 
 		for (auto& window: node->windows()) {
-			window.layoutTarget()->assignToSpace(workspace->m_space);
+			window.layoutTarget()->assignToSpace(workspace->space());
 		}
 
 		g_suppressInsert = false;
@@ -1570,7 +1586,7 @@ bool Hy3Layout::moveNodeToWorkspace(
 			hy3_log(
 			    ERR,
 			    "insertNode rejected node moved to workspace {}; its windows are now there with no node",
-			    workspace->m_id
+			    workspace->addressableName()
 			);
 			errorNotif();
 			// a broken state, but the windows DID move - returning false would
@@ -1591,9 +1607,9 @@ bool Hy3Layout::moveNodeToWorkspace(
 	// recalcGeometry for when a workspace is in that state.
 	auto monitor = workspace->m_monitor.lock();
 	if (follow && monitor) {
-		if (workspace->m_isSpecialWorkspace) {
+		if (workspace->type() == Workspace::eWorkspaceType::SPECIAL) {
 			monitor->setSpecialWorkspace(workspace);
-		} else if (origin_ws->m_isSpecialWorkspace) {
+		} else if (origin_ws->type() == Workspace::eWorkspaceType::SPECIAL) {
 			if (auto origin_monitor = origin_ws->m_monitor.lock()) {
 				origin_monitor->setSpecialWorkspace(nullptr);
 			}
@@ -2519,11 +2535,11 @@ void Hy3Layout::updateAutotileWorkspaces() {
 	}
 }
 
-bool Hy3Layout::shouldAutotileWorkspace(const CWorkspace* workspace) {
+bool Hy3Layout::shouldAutotileWorkspace(const Workspace::CHLWorkspace* workspace) {
 	if (this->autotile.workspace_blacklist) {
-		return !this->autotile.workspaces.contains(workspace->m_id);
+		return !this->autotile.workspaces.contains(static_cast<int>(workspace->numberedID().value_or(0)));
 	} else {
 		return this->autotile.workspaces.empty()
-		    || this->autotile.workspaces.contains(workspace->m_id);
+		    || this->autotile.workspaces.contains(static_cast<int>(workspace->numberedID().value_or(0)));
 	}
 }

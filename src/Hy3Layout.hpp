@@ -95,13 +95,13 @@ public:
 	void shutdown();
 	PHLMONITOR monitorInDirection(ShiftDirection);
 	PHLMONITOR monitorFromSelector(const std::string& selector);
-	bool moveToMonitor(CWorkspace* origin, PHLMONITOR target, bool follow, bool warp);
-	bool moveNodeToMonitor(CWorkspace* origin, const std::string& selector, bool follow, bool warp);
-	void toggleFloating(CWorkspace* workspace, const std::string& unmount_workspace, bool warp);
+	bool moveToMonitor(Workspace::CHLWorkspace* origin, PHLMONITOR target, bool follow, bool warp);
+	bool moveNodeToMonitor(Workspace::CHLWorkspace* origin, const std::string& selector, bool follow, bool warp);
+	void toggleFloating(Workspace::CHLWorkspace* workspace, const std::string& unmount_workspace, bool warp);
 	void swapWindow(ShiftDirection);
 
 	void warpCursor();
-	bool moveNodeToWorkspace(CWorkspace* origin, const std::string& wsname, bool follow, bool warp);
+	bool moveNodeToWorkspace(Workspace::CHLWorkspace* origin, const std::string& wsname, bool follow, bool warp);
 	void changeFocus(FocusShift);
 	void focusTab(TabFocus target, TabFocusMousePriority, bool wrap_scroll, int index);
 	void setNodeSwallow(SetSwallowOption);
@@ -161,7 +161,7 @@ private:
 	);
 
 	void updateAutotileWorkspaces();
-	bool shouldAutotileWorkspace(const CWorkspace* workspace);
+	bool shouldAutotileWorkspace(const Workspace::CHLWorkspace* workspace);
 
 	// Per-instance event listeners
 	CHyprSignalListener m_windowActiveListener;
