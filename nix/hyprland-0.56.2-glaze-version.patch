@@ -1,0 +1,15 @@
+Taken verbatim from hyprwm/Hyprland 91f29f23b ("flake.lock: update, drop glaze
+version requirement"), one commit after v0.56.2. Applied to the v0.56.2 package
+by flake.nix; see the comment there for why it is a patch and not a pin.
+
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -130,7 +130,7 @@ set(GLES_VERSION "GLES3")
+ find_package(OpenGL REQUIRED COMPONENTS ${GLES_VERSION})
+ find_package(glslang CONFIG REQUIRED)
+
+-find_package(glaze 7...<8 QUIET)
++find_package(glaze QUIET)
+ if(NOT glaze_FOUND)
+   set(GLAZE_VERSION v7.2.0)
+   message(STATUS "glaze dependency not found, retrieving ${GLAZE_VERSION} with FetchContent")

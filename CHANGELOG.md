@@ -31,6 +31,16 @@ Dropped automatically on rebase once upstream merges them. See FORK.md.
   `makegroup` on a tab group's sole child wraps it instead of relayouting the tab group.
 - #298 — tab bar highlights refresh when monitor focus changes.
 
+# hl0.56.2 and before
+
+- Only compatibility fixes. Hyprland 0.56.1 and 0.56.2 are backport releases with no plugin
+  API changes; the only change here is in the flake, which was still pinned to 0.56.0 — so
+  flake installs on 0.56.2 built against the wrong headers and were refused at load. The tag's
+  own nix package does not build from source (no nixpkgs in its dependency tree carries the
+  glaze 7 its CMake now requires), so the flake carries upstream's one-commit-after fix as a
+  patch; the compositor source, and with it the reported version hash, stays on the release
+  tag.
+
 # hl0.56.0.1 and before
 
 - Fix mouse up+left mouse resize
