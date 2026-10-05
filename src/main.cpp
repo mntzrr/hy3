@@ -12,12 +12,37 @@
 
 APICALL EXPORT std::string PLUGIN_API_VERSION() { return HYPRLAND_API_VERSION; }
 
+#ifndef HY3_NO_VERSION_CHECK
+// The same string as hyprland's __hyprland_api_get_client_hash(), built here
+// rather than called. That helper is an inline function caching its result in
+// a function-local static, which GCC emits STB_GNU_UNIQUE: one copy for the
+// whole process, shared by every plugin that ever called it, and the copy that
+// got there first wins. A build refused at load is not unmapped - the unique
+// symbols pin it - so its stale hash stays cached, and every later hy3, however
+// correctly built, compares against it and is refused too, until hyprland
+// restarts. Hit after hyprpm built against headers it had not refreshed:
+// fixing the headers and rebuilding changed nothing in the running session.
+//
+// File-local and uncached, so it reads this build's own macros every time.
+// Must stay in step with PluginAPI.hpp; if hyprland changes the format, this
+// refuses to load rather than loading wrongly.
+static std::string clientHash() {
+	auto stripPatch = [](std::string_view ver) {
+		return std::string {ver.contains('.') ? ver.substr(0, ver.find_last_of('.')) : ver};
+	};
+
+	return std::string {GIT_COMMIT_HASH} + "_aq_" + stripPatch(AQUAMARINE_VERSION) + "_hu_"
+	     + stripPatch(HYPRUTILS_VERSION) + "_hg_" + stripPatch(HYPRGRAPHICS_VERSION) + "_hc_"
+	     + stripPatch(HYPRCURSOR_VERSION) + "_hlg_" + stripPatch(HYPRLANG_VERSION);
+}
+#endif
+
 APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 	PHANDLE = handle;
 
 #ifndef HY3_NO_VERSION_CHECK
 	const std::string COMPOSITOR_HASH = __hyprland_api_get_hash();
-	const std::string CLIENT_HASH = __hyprland_api_get_client_hash();
+	const std::string CLIENT_HASH = clientHash();
 
 	if (COMPOSITOR_HASH != CLIENT_HASH) {
 		HyprlandAPI::addNotification(
