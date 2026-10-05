@@ -13,9 +13,10 @@ Changes only present in this fork. See FORK.md.
   instead of wrapping it into a new group.
 - Added `hy3:togglefloating` / `hy3.toggle_floating`, which unmounts scratchpad windows onto
   a regular workspace and otherwise toggles floating.
-- Fixed a refused stale build blocking every later hy3 load until Hyprland restarts: the version
-  check no longer uses Hyprland's process-wide cached client hash, which the first build to load
-  fixed for the whole session.
+- Fixed a refused stale build poisoning the version check for every later hy3 load: the check no
+  longer uses Hyprland's process-wide cached client hash, which the first build to load fixed for
+  the whole session. A rebuild at the *same* path, which is how hyprpm installs, still needs a
+  Hyprland restart: the refused build stays registered under that path and is what loads.
 
 ## Backported from open upstream PRs
 

@@ -20,12 +20,20 @@ APICALL EXPORT std::string PLUGIN_API_VERSION() { return HYPRLAND_API_VERSION; }
 // got there first wins. A build refused at load is not unmapped - the unique
 // symbols pin it - so its stale hash stays cached, and every later hy3, however
 // correctly built, compares against it and is refused too, until hyprland
-// restarts. Hit after hyprpm built against headers it had not refreshed:
-// fixing the headers and rebuilding changed nothing in the running session.
+// restarts. Hit after hyprpm built against headers it had not refreshed.
 //
 // File-local and uncached, so it reads this build's own macros every time.
 // Must stay in step with PluginAPI.hpp; if hyprland changes the format, this
 // refuses to load rather than loading wrongly.
+//
+// This does NOT make a rebuild loadable in the same session the usual way.
+// The refused build also stays registered with the dynamic linker under its
+// path, and dlopen matches an already-loaded object by path before reading the
+// file, so loading a rebuild from that same path - which is all hyprpm ever
+// does - hands back the refused build and runs its old check, not this one.
+// Only a hyprland restart clears that; nothing in a new build can, because
+// none of its code runs. What this fixes is a rebuild loaded from any other
+// path, which the cached hash used to refuse as well.
 static std::string clientHash() {
 	auto stripPatch = [](std::string_view ver) {
 		return std::string {ver.contains('.') ? ver.substr(0, ver.find_last_of('.')) : ver};
