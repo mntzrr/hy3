@@ -10,12 +10,14 @@
 
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/render/Texture.hpp>
+#include "render/Context.hpp"
 #include "shaders.hpp"
 
 using Render::GL::g_pHyprOpenGL;
 using Hyprutils::Math::CBox;
 
 void Hy3Render::renderTab(
+    Render::CRenderContext& ctx,
     const CBox& box,
     float opacity,
     bool blur,
@@ -28,7 +30,7 @@ void Hy3Render::renderTab(
 	if (shaders == nullptr) return;
 
 	auto& shader = shaders->tab;
-	auto& rdata = g_pHyprRenderer->m_renderData;
+	auto& rdata = ctx.m_data;
 
 	auto rbox = box;
 	rdata.renderModif.applyToBox(rbox);
@@ -36,7 +38,7 @@ void Hy3Render::renderTab(
 	const auto& monitorSize = rdata.pMonitor->m_transformedSize;
 	auto monitorBox = CBox {Vector2D(), monitorSize};
 
-	auto glMatrix = g_pHyprRenderer->projectBoxToTarget(monitorBox, Hyprutils::Math::HYPRUTILS_TRANSFORM_NORMAL);
+	auto glMatrix = g_pHyprRenderer->projectBoxToTarget(ctx, monitorBox, Hyprutils::Math::HYPRUTILS_TRANSFORM_NORMAL);
 
 	g_pHyprOpenGL->useShader(shader.program);
 
@@ -50,7 +52,7 @@ void Hy3Render::renderTab(
 	WP<Render::ITexture> blurTex;
 
 	if (blur) {
-		blurTex = rdata.pMonitor->resources()->m_blurFB->getTexture();
+		blurTex = g_pHyprRenderer->getBlurTexture(ctx);
 		if (!blurTex) blur = false;
 	}
 
