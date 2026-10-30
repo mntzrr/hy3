@@ -5,6 +5,7 @@
 
 #include <hyprland/src/workspace/HLWorkspace.hpp>
 #include <hyprland/src/desktop/rule/Engine.hpp>
+#include <hyprland/src/desktop/view/window/WindowPresentation.hpp>
 #include <hyprland/src/config/ConfigValue.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprlang.hpp>
@@ -60,7 +61,7 @@ inline void flushHy3TagRechecks() {
 		auto window = ref.lock();
 		if (!window || !window->m_ruleApplicator) continue;
 		window->m_ruleApplicator->propertiesChanged(Desktop::Rule::RULE_PROP_TAG);
-		window->updateDecorationValues();
+		window->presentation().refreshValues();
 	}
 }
 

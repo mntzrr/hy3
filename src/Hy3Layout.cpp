@@ -1062,7 +1062,7 @@ void Hy3Layout::shiftWindow(
 	static const auto floating_moves = CConfigValue<Config::INTEGER>("plugin:hy3:movewindow_floating");
 
 	auto current_window = Desktop::focusState()->window();
-	if (current_window != nullptr && current_window->m_isFloating) {
+	if (current_window != nullptr && current_window->isFloating()) {
 		auto target = current_window->layoutTarget();
 		auto space = target != nullptr ? target->space() : nullptr;
 
@@ -2197,7 +2197,7 @@ Hy3Node* Hy3Layout::getWorkspaceFocusedNodeIfTiled(
     bool stop_at_expanded
 ) {
 	auto window = Desktop::focusState()->window();
-	if (window != nullptr && window->m_isFloating) return nullptr;
+	if (window != nullptr && window->isFloating()) return nullptr;
 
 	return this->getWorkspaceFocusedNode(ignore_group_focus, stop_at_expanded);
 }
