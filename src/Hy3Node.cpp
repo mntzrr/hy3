@@ -551,9 +551,8 @@ void Hy3Node::recalcSizePosRecursive(CBox offsets, bool no_animation) {
 	static const auto p_gaps_in = CConfigValue<Config::IComplexConfigValue>("general:gaps_in");
 
 	auto ws = this->layoutWorkspace();
-	// ::valid - Hy3Node::valid() is a different, argument-less thing and shadows it
-	auto workspace_rule = ::valid(ws) ? Config::workspaceRuleMgr()->getWorkspaceRuleFor(ws)
-	                                  : std::optional<Config::CWorkspaceRule>();
+	auto workspace_rule = ws != nullptr ? Config::workspaceRuleMgr()->getWorkspaceRuleFor(ws)
+	                                    : std::optional<Config::CWorkspaceRule>();
 	auto gaps_in = workspace_rule.and_then([](const auto& r) { return r.m_gapsIn; })
 	                   .value_or(*sc<Config::CCssGapData*>(p_gaps_in.ptr()));
 

@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <regex>
 #include <optional>
 #include <set>
 
@@ -756,8 +757,8 @@ std::optional<Vector2D> Hy3Layout::predictSizeForNewTarget() {
 	auto work_area = space->workArea();
 
 	auto ws = this->workspace();
-	auto workspace_rule = ::valid(ws) ? Config::workspaceRuleMgr()->getWorkspaceRuleFor(ws)
-	                                  : std::optional<Config::CWorkspaceRule>();
+	auto workspace_rule = ws != nullptr ? Config::workspaceRuleMgr()->getWorkspaceRuleFor(ws)
+	                                    : std::optional<Config::CWorkspaceRule>();
 	auto gaps_in = workspace_rule.and_then([](auto r) { return r.m_gapsIn; })
 	                   .value_or(*sc<Config::CCssGapData*>(p_gaps_in.ptr()));
 
@@ -789,12 +790,12 @@ std::optional<Vector2D> Hy3Layout::predictSizeForNewTarget() {
 	switch (group.layout) {
 	case Hy3GroupLayout::SplitH: {
 		auto inter_gap = gaps_in.m_left + gaps_in.m_right;
-		size = {(box.w - (child_count - 1) * inter_gap) / child_count, box.h};
+		size = Vector2D{(box.w - (child_count - 1) * inter_gap) / child_count, box.h};
 		break;
 	}
 	case Hy3GroupLayout::SplitV: {
 		auto inter_gap = gaps_in.m_top + gaps_in.m_bottom;
-		size = {box.w, (box.h - (child_count - 1) * inter_gap) / child_count};
+		size = Vector2D{box.w, (box.h - (child_count - 1) * inter_gap) / child_count};
 		break;
 	}
 	case Hy3GroupLayout::Tabbed:

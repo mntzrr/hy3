@@ -35,6 +35,14 @@ Dropped automatically on rebase once upstream merges them. See FORK.md.
   `makegroup` on a tab group's sole child wraps it instead of relayouting the tab group.
 - #298 — tab bar highlights refresh when monitor focus changes.
 
+# hl0.57.0 and before
+
+- Compatibility with Hyprland 0.57.0: the workspace refactor (`CWorkspace` became
+  `Workspace::CHLWorkspace`, `m_space`/`m_monitor` are accessors, workspace creation and
+  lookup go through the new query API) and the render context changes (`Render::CRenderContext`
+  is threaded through the tab bar pass and the shader path). The flake is pinned to 0.57.0;
+  the 0.56.2 glaze patch is gone.
+
 # hl0.56.2 and before
 
 - Only compatibility fixes. Hyprland 0.56.1 and 0.56.2 are backport releases with no plugin
