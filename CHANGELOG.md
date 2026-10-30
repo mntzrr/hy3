@@ -37,6 +37,8 @@ Dropped automatically on rebase once upstream merges them. See FORK.md.
 
 # hl0.57.0 and before
 
+- Added `tabs:padding_horizontal` and `tabs:padding_outer` for configurable horizontal tab
+  padding, taken from upstream (`8922749`). `padding_horizontal = -1` keeps using `padding`.
 - Compatibility with Hyprland 0.57.0: the workspace refactor (`CWorkspace` became
   `Workspace::CHLWorkspace`, `m_space`/`m_monitor` are accessors, workspace creation and
   lookup go through the new query API) and the render context changes (`Render::CRenderContext`

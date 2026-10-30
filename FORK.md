@@ -72,6 +72,11 @@ git log --oneline upstream/master
 git cherry-pick <chase commit>     # or hand-apply
 ```
 
+Taken by hand so far:
+
+- `8922749` — configurable horizontal tab padding (`tabs:padding_horizontal`, `tabs:padding_outer`).
+  Applied as-is: the fork's tab bar still laid entries out the way upstream did before it.
+
 What is worth taking is the release chasing: upstream tags `hl<version>` within a day or so of
 a Hyprland major, and that commit is usually the shortest description of what the new API
 wants. Its bug fixes are a different matter — nine of its open issues were fixed here instead
